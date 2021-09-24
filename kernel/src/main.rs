@@ -2,9 +2,8 @@
 #![no_main]
 
 mod diag;
-mod arch;
+pub mod arch;
 
-/// Kernel entry point
-#[no_mangle]
-pub extern "C" fn _start() {
+pub fn kernel_main() {
+
 }

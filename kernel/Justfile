@@ -3,8 +3,10 @@ dev cargo-params="" qemu-params="-enable-kvm" ovmf="/usr/share/ovmf/x64/OVMF.fd"
     if [ "$PWD" == "*phobos" ]; then
         cd kernel
     fi
-    kernel_path=$(cargo build {{ cargo-params }} --message-format=json | jq .executable\? | grep -v "null" | sed -e 's/^"//' -e 's/"$//')
+    cargo build {{ cargo-params }}
+    kernel_path=$(cargo build {{ cargo-params }} --message-format=json 2> /dev/null | jq .executable\? | grep -v "null" | sed -e 's/^"//' -e 's/"$//')
     pushd src/arch/x86_64/boot > /dev/null
-    efi_path=$(cargo build {{ cargo-params }} --message-format=json | jq .executable\? | grep -v "null" | sed -e 's/^"//' -e 's/"$//')
+    cargo build {{ cargo-params }}
+    efi_path=$(cargo build {{ cargo-params }} --message-format=json 2> /dev/null | jq .executable\? | grep -v "null" | sed -e 's/^"//' -e 's/"$//')
     popd > /dev/null
     uefi-run --files $efi_path $kernel_path --bios {{ ovmf }} --qemu {{ qemu }} -- {{ qemu-params }}
