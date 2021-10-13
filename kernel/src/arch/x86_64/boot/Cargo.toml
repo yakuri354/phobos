@@ -9,4 +9,5 @@ edition = "2018"
 uefi = { version = "0.11.0", features = ["logger", "exts"] }
 uefi-services = "0.8.0"
 log = "0.4.14"
-kernel = { path = "../../../../"}
+goblin = { version = "0.4", features = ["elf64", "elf32", "archive", "endian_fd"], default-features = false }
+x86_64 = { path = "../" }

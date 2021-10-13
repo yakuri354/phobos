@@ -13,8 +13,8 @@
   "disable-redzone": true,
   "features": "-mmx,-sse,+soft-float",
   "pre-link-args": {
-    "ld": [
-      "--script=layout.ld"
+    "ld.lld": [
+      "-T", "kernel/src/arch/x86_64/link.ld"
     ]
   }
 }

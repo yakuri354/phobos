@@ -6,6 +6,8 @@
       <sourceFolder url="file://$MODULE_DIR$/kernel/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/kernel/src/arch/x86_64/boot/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/libc/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/kernel/src/arch/aarch64/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/kernel/src/arch/x86_64/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />
