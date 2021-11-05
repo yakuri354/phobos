@@ -1,11 +1,11 @@
-dev cargo-params="" qemu-params="-enable-kvm" ovmf="/usr/share/ovmf/x64/OVMF.fd" qemu="qemu-system-x86_64":
+dev cargo-params="" qemu-params="-s -d cpu_reset -serial stdio -no-reboot -no-shutdown" ovmf="/usr/share/ovmf/x64/OVMF.fd" qemu="qemu-system-x86_64":
     #!/bin/sh -e
     if [ "$PWD" == "*phobos" ]; then
         cd kernel
     fi
     cargo build {{ cargo-params }}
     kernel_path=$(cargo build {{ cargo-params }} --message-format=json 2> /dev/null | jq .executable\? | grep -v "null" | sed -e 's/^"//' -e 's/"$//')
-    pushd src/arch/x86_64/boot > /dev/null
+    pushd src/arch/x86_64_uefi/boot > /dev/null
     cargo build {{ cargo-params }}
     efi_path=$(cargo build {{ cargo-params }} --message-format=json 2> /dev/null | jq .executable\? | grep -v "null" | sed -e 's/^"//' -e 's/"$//')
     popd > /dev/null

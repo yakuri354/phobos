@@ -1,18 +1,19 @@
 #![feature(asm)]
-#![feature(llvm_asm)]
+#![feature(default_alloc_error_handler)]
 #![no_std]
 #![no_main]
 
+use log::info;
+
+mod arch;
+/// Kernel diagnostic facilities, such as panics, logging, etc.
 mod diag;
+mod mm;
+mod sync;
 
-#[cfg(target_arch = "aarch64")]
-pub use aarch64 as arch;
+pub fn kernel_main() -> ! {
+    diag::init();
+    info!("phobos kernel v{}", env!("CARGO_PKG_VERSION"));
 
-#[cfg(target_arch = "x86_64")]
-pub use x86_64 as arch;
-
-#[no_mangle]
-pub extern "C" fn _start() -> ! {
-    arch::init();
     loop {}
 }
