@@ -1,21 +1,29 @@
-use boot_ffi::KernelArgs;
-use uefi::table::runtime::ResetType;
-use uefi::Status;
-use uart_16550::SerialPort;
+use core::cell::RefCell;
 use core::fmt::Write;
-use crate::kernel_main;
-use core::cell::{RefCell};
 use core::mem::MaybeUninit;
+use log::info;
+use lazy_static::lazy_static;
+use spin::Mutex as Spinlock;
+use uart_16550::SerialPort;
+use uefi::Status;
+use uefi::table::runtime::ResetType;
+pub use x86_64::{PhysAddr, VirtAddr};
 
-pub use x86_64::PhysAddr;
+use boot_ffi::KernelArgs;
 
-pub mod mem;
+use crate::kernel_main;
+
 pub mod debug;
-
-static mut KERNEL_ARGS: Option<KernelArgs> = None;
+pub mod paging;
+pub mod interrupt;
+mod gdt;
 
 #[no_mangle]
-pub extern "C" fn _start(args: *mut KernelArgs) -> ! {
-    unsafe { KERNEL_ARGS = Some(args.read()) }
+pub unsafe extern "C" fn _start(args: *mut KernelArgs) -> ! {
+    super::debug::init_debug_logger().unwrap(); // Cannot `expect` it :(
+    info!("phobos kernel v{} on x86_64", env!("CARGO_PKG_VERSION"));
+
+    paging::init(&mut *args);
+
     crate::kernel_main()
 }

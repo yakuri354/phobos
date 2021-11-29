@@ -10,10 +10,8 @@ mod arch;
 mod diag;
 mod mm;
 mod sync;
+mod data;
 
 pub fn kernel_main() -> ! {
-    diag::init();
-    info!("phobos kernel v{}", env!("CARGO_PKG_VERSION"));
-
     loop {}
 }

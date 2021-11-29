@@ -1,8 +1,8 @@
-use lazy_static::lazy_static;
-use crate::sync::spin::Spinlock;
-use uart_16550::SerialPort;
 use core::fmt::Write;
-use log::{Metadata, Record, SetLoggerError, LevelFilter};
+use lazy_static::lazy_static;
+use log::{LevelFilter, Metadata, Record, SetLoggerError};
+use spin::Mutex as Spinlock;
+use uart_16550::SerialPort;
 
 lazy_static! {
     static ref SERIAL1: Spinlock<SerialPort> = {
@@ -15,8 +15,7 @@ lazy_static! {
 static DBG_LOGGER: SerialLogger = SerialLogger {};
 
 pub fn init_debug_logger() -> Result<(), SetLoggerError> {
-    log::set_logger(&DBG_LOGGER)
-        .map(|()| log::set_max_level(LevelFilter::Info))
+    log::set_logger(&DBG_LOGGER).map(|()| log::set_max_level(LevelFilter::Info))
 }
 
 struct SerialLogger;
@@ -28,11 +27,7 @@ impl log::Log for SerialLogger {
 
     fn log(&self, record: &Record) {
         SERIAL1.lock().write_fmt(
-            format_args!(
-                "{}: {}",
-                record.level(),
-                record.args()
-            ),
+            format_args!("{}: {}", record.level(), record.args()),
             // format_args!(
             //     "{:>8}: {} ({}, {}:{})\n",
             //     record.level(),

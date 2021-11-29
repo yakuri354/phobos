@@ -15,27 +15,27 @@ use core::ops::Not;
 use core::ptr::{slice_from_raw_parts, slice_from_raw_parts_mut};
 
 use log::{debug, error, info};
-use uefi::Event;
 use uefi::prelude::*;
 use uefi::proto::console::gop::{FrameBuffer, GraphicsOutput};
 use uefi::proto::media::file::{File, FileAttribute, FileInfo, FileMode, RegularFile};
-use uefi::table::boot::{AllocateType, MemoryDescriptor, MemoryType};
+use uefi::table::boot::{AllocateType, MemoryAttribute, MemoryDescriptor, MemoryType};
+use uefi::Event;
 use uefi_services::*;
-use x86_64::{PhysAddr, VirtAddr};
 use x86_64::instructions::port::PortWriteOnly;
 use x86_64::registers::control::{Cr0, Cr0Flags, Cr3, Cr4, Efer, EferFlags};
 use x86_64::registers::read_rip;
 use x86_64::structures::idt::InterruptDescriptorTable;
+use x86_64::structures::paging::mapper::PageTableFrameMapping;
+use x86_64::structures::paging::page_table::PageTableEntry;
 use x86_64::structures::paging::{
     FrameAllocator, MappedPageTable, Mapper, Page, PageTable, PageTableFlags, PhysFrame,
     RecursivePageTable, Size4KiB,
 };
-use x86_64::structures::paging::mapper::PageTableFrameMapping;
-use x86_64::structures::paging::page_table::PageTableEntry;
+use x86_64::{PhysAddr, VirtAddr};
 
-use boot_ffi::KernelArgs;
-use uart_16550::SerialPort;
+use boot_ffi::{KernelArgs, PHYS_MAP_OFFSET};
 use core::fmt::Write;
+use uart_16550::SerialPort;
 
 mod elf;
 
@@ -57,7 +57,10 @@ unsafe impl FrameAllocator<Size4KiB> for UefiAlloc {
 #[entry]
 fn efi_main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     uefi_services::init(&system_table).expect_success("Failed to setup UEFI services");
-    system_table.stdout().reset(false).expect_success("Failed to reset stdout");
+    system_table
+        .stdout()
+        .reset(false)
+        .expect_success("Failed to reset stdout");
 
     info!(
         "phobos x86_64 UEFI bootloader v{}",
@@ -134,7 +137,7 @@ fn efi_main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     const REC_ADDRESS: u64 = 0xfffffffffffff000;
 
     let cr0 = Cr0::read();
-    unsafe { Cr0::write(cr0 & (!Cr0Flags::WRITE_PROTECT)) };
+    unsafe { Cr0::write(cr0 & !Cr0Flags::WRITE_PROTECT) };
 
     pml4[REC_IDX].set_addr(
         PhysAddr::new(pml4_frame.start_address().as_u64()),
@@ -152,7 +155,7 @@ fn efi_main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
 
     info!("Mapping kernel image");
 
-    let entry = elf::map_elf(k_buf, &mut rpt, &mut system_table);
+    let (entry, k_mdl) = elf::map_elf(k_buf, &mut rpt, &mut system_table);
 
     info!("Press any key to jump into kernel...");
 
@@ -175,7 +178,7 @@ fn efi_main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
         &mut *slice_from_raw_parts_mut(
             system_table
                 .boot_services()
-                .allocate_pool(MemoryType::RUNTIME_SERVICES_DATA, mmap_size)
+                .allocate_pool(MemoryType::LOADER_DATA, mmap_size)
                 .expect_success("Failed to allocate memory map buffer"),
             mmap_size,
         )
@@ -186,7 +189,7 @@ fn efi_main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     let args = unsafe {
         &mut *(system_table
             .boot_services()
-            .allocate_pool(MemoryType::RUNTIME_SERVICES_DATA, size_of::<KernelArgs>())
+            .allocate_pool(MemoryType::LOADER_DATA, size_of::<KernelArgs>())
             .expect_success("Failed to allocate kernel args buffer")
             as *mut KernelArgs)
     };
@@ -196,14 +199,17 @@ fn efi_main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
         .memory_map(mmap_buf)
         .expect_success("Failed to get memory map");
 
-    for (i, md) in mmap_it.enumerate() {
+    for (i, md) in mmap_it.chain(&k_mdl).enumerate() {
         match args.mmap.get_mut(i) {
             Some(ent) => *ent = *md,
-            None => panic!("Memory descriptors do not fit into KernelArgs")
+            None => panic!("Memory descriptors do not fit into KernelArgs"),
         }
     }
 
-    info!("Exiting boot services and calling kernel entry point at {:?}", entry);
+    info!(
+        "Exiting boot services and calling kernel entry point at {:?}",
+        entry
+    );
 
     let (rt, _) = system_table
         .exit_boot_services(handle, mmap_buf)

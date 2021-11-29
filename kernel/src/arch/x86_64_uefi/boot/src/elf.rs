@@ -1,16 +1,18 @@
 use crate::UefiAlloc;
-use boot_ffi::KernelEntryPoint;
+use alloc::vec::Vec;
+use boot_ffi::*;
+use core::mem::transmute;
 use core::panic;
 use goblin::elf::Elf;
 use log::{debug, info};
-use uefi::table::boot::{AllocateType, MemoryType};
+use uefi::table::boot::{AllocateType, MemoryDescriptor, MemoryType};
+use uefi::table::cfg::MEMORY_TYPE_INFORMATION_GUID;
 use uefi::table::{Boot, SystemTable};
 use uefi::ResultExt;
 use x86_64::structures::paging::{
     FrameAllocator, Mapper, Page, PageTable, PageTableFlags, PhysFrame, Size4KiB,
 };
 use x86_64::{PhysAddr, VirtAddr};
-use core::mem::transmute;
 
 fn count_pages_needed(size: usize) -> usize {
     let rem = size % 0x1000;
@@ -22,10 +24,15 @@ fn count_pages_needed(size: usize) -> usize {
 }
 
 /// This function can only be called with Boot Services enabled
-pub fn map_elf<M>(raw: &[u8], mapper: &mut M, st: &mut SystemTable<Boot>) -> KernelEntryPoint
+pub fn map_elf<M>(
+    raw: &[u8],
+    mapper: &mut M,
+    st: &mut SystemTable<Boot>,
+) -> (KernelEntryPoint, Vec<MemoryDescriptor>)
 where
     M: Mapper<Size4KiB>,
 {
+    let mut mdl = Vec::new();
     match Elf::parse(raw) {
         Ok(elf) => {
             if !elf.is_64 {
@@ -41,27 +48,46 @@ where
 
                     debug!("Allocating {} pages", pages);
 
+                    let mut mem_ty = KERNEL_RO_MEM_TYPE;
+
                     let mut page_flags = PageTableFlags::empty()
                         | PageTableFlags::WRITABLE
                         | PageTableFlags::GLOBAL
                         | PageTableFlags::PRESENT;
 
                     if (ph.p_flags & 1) == 0 {
-                        page_flags |= PageTableFlags::NO_EXECUTE
+                        page_flags |= PageTableFlags::NO_EXECUTE;
+                    } else {
+                        mem_ty = KERNEL_RX_MEM_TYPE;
                     }
+
                     if (ph.p_flags & 2) << 1 == 1 {
-                        page_flags |= PageTableFlags::WRITABLE
+                        page_flags |= PageTableFlags::WRITABLE;
+                        if mem_ty == KERNEL_RX_MEM_TYPE {
+                            mem_ty = KERNEL_RWX_MEM_TYPE
+                        } else {
+                            mem_ty = KERNEL_RW_MEM_TYPE
+                        }
                     }
 
                     let pages_addr = st
                         .boot_services()
                         .allocate_pages(
                             AllocateType::AnyPages,
-                            MemoryType::RUNTIME_SERVICES_DATA,
+                            MemoryType::custom(mem_ty),
                             pages as usize,
                         )
                         .expect_success("Failed to allocate pages for loading the kernel")
                         as *mut u8;
+
+                    let mut tmp = MemoryDescriptor::default();
+                    tmp.ty = MemoryType::custom(mem_ty);
+                    tmp.phys_start = pages_addr as _;
+                    tmp.virt_start = ph.p_vaddr;
+                    tmp.page_count = pages;
+
+                    mdl.push(tmp);
+
                     debug!("Zeroing allocated pages");
                     unsafe {
                         pages_addr.write_bytes(0, ph.p_memsz as usize);
@@ -96,7 +122,7 @@ where
                 }
             }
             info!("Kernel entry point at {:#x}", elf.entry);
-            unsafe { transmute(elf.entry) }
+            unsafe { (transmute(elf.entry), mdl) }
         }
         Err(e) => panic!("Kernel image is not a valid ELF file"),
     }
