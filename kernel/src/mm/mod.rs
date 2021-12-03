@@ -1,7 +1,6 @@
 use crate::arch::PhysAddr;
 
 pub mod alloc;
-mod buddy;
 
 pub const PAGE_SIZE: usize = 0x1000;
 

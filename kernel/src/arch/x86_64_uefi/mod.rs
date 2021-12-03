@@ -1,22 +1,22 @@
 use core::cell::RefCell;
 use core::fmt::Write;
 use core::mem::MaybeUninit;
-use log::info;
 use lazy_static::lazy_static;
+use log::info;
 use spin::Mutex as Spinlock;
 use uart_16550::SerialPort;
-use uefi::Status;
 use uefi::table::runtime::ResetType;
+use uefi::Status;
 pub use x86_64::{PhysAddr, VirtAddr};
 
 use boot_ffi::KernelArgs;
 
 use crate::kernel_main;
 
+pub mod const_data;
 pub mod debug;
-pub mod paging;
 pub mod interrupt;
-mod gdt;
+pub mod paging;
 
 #[no_mangle]
 pub unsafe extern "C" fn _start(args: *mut KernelArgs) -> ! {

@@ -6,11 +6,11 @@
 use log::info;
 
 mod arch;
+mod data;
 /// Kernel diagnostic facilities, such as panics, logging, etc.
 mod diag;
 mod mm;
 mod sync;
-mod data;
 
 pub fn kernel_main() -> ! {
     loop {}

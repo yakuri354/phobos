@@ -1,9 +1,9 @@
 use crate::mm::{PageFrameRange, SystemMemoryInfo, PAGE_SIZE};
-use log::info;
 use boot_ffi::*;
 use core::borrow::Borrow;
 use core::mem::size_of;
 use core::ops::{Deref, DerefMut};
+use log::{debug, info};
 use uefi::table::boot::{MemoryAttribute, MemoryDescriptor, MemoryType};
 use x86_64::structures::paging::page::{PageRange, PageRangeInclusive};
 use x86_64::structures::paging::{
@@ -122,32 +122,47 @@ pub unsafe fn recurse_pml4(pml4: &mut PageTable, idx: u16) {
 pub unsafe fn init(args: &mut KernelArgs) {
     info!("Creating new paging tables");
 
+    debug!("Args: {:?}", args);
+
     let temp_alloc_region = args
         .mmap
         .iter()
         // Ensure the memory region is not used by runtime services
-        .filter(|d| !d.att.contains(MemoryAttribute::RUNTIME))
+        .filter(|d| d.ty == MemoryType::CONVENTIONAL)
         .max_by(|a, b| a.page_count.cmp(&b.page_count))
         .expect("No usable memory found, aborting");
 
+    debug!(
+        "Initializing WatermarkAlloc with desc {:?}",
+        temp_alloc_region
+    );
+
     let mut wm_alloc = WatermarkAlloc::new((*temp_alloc_region).into());
+
+    debug!("Allocating new PML4");
 
     let pml4_page =
         unsafe { wm_alloc.alloc_zeroed_pages(1) }.expect("Could not allocate memory for PML4");
 
     let pml4 = &mut *(pml4_page.as_u64() as *mut PageTable);
 
+    debug!("Setting up recursive paging");
+
     recurse_pml4(pml4, 511);
+
+    debug!("Allocating new UEFI memory map");
 
     let new_desc = &mut *(wm_alloc
         .alloc_zeroed_pages(size_of::<MemoryDescriptor>() * 512 / PAGE_SIZE)
         .expect("Could not allocate memory for new EFI memory map")
         .as_u64() as *mut [MemoryDescriptor; 512]);
 
+    info!("Remapping kernel memory");
+
     for (i, desc) in args.mmap.iter().enumerate() {
         new_desc[i] = *desc;
         // Addresses reserved for kernel
-        if desc.ty.0 > 0x7000000 {
+        if desc.ty.0 > KERNEL_MEM_TYPE_RANGE_START {
             let flags = match desc.ty.0 {
                 KERNEL_RO_MEM_TYPE => PageTableFlags::NO_EXECUTE,
                 KERNEL_RX_MEM_TYPE => PageTableFlags::empty(),
@@ -163,7 +178,7 @@ pub unsafe fn init(args: &mut KernelArgs) {
                     end: Page::from_start_address(VirtAddr::new(
                         desc.virt_start + desc.page_count * PAGE_SIZE as u64,
                     ))
-                        .unwrap(),
+                    .unwrap(),
                 },
                 pml4,
                 PageTableFlags::PRESENT | PageTableFlags::GLOBAL | PageTableFlags::WRITABLE,
@@ -178,11 +193,11 @@ pub unsafe fn init(args: &mut KernelArgs) {
                     start: Page::from_start_address(VirtAddr::new(
                         desc.phys_start + PHYS_MAP_OFFSET,
                     ))
-                        .expect("Memory map VA unaligned"),
+                    .expect("Memory map VA unaligned"),
                     end: Page::from_start_address(VirtAddr::new(
                         desc.phys_start + PHYS_MAP_OFFSET + desc.page_count * PAGE_SIZE as u64,
                     ))
-                        .unwrap(),
+                    .unwrap(),
                 },
                 pml4,
                 PageTableFlags::PRESENT | PageTableFlags::GLOBAL | PageTableFlags::WRITABLE,
@@ -207,5 +222,5 @@ pub unsafe fn init(args: &mut KernelArgs) {
         flags,
     );
 
-    info!("It worked!")
+    info!("Creating new kernel stack and heap")
 }

@@ -33,7 +33,8 @@ use x86_64::structures::paging::{
 };
 use x86_64::{PhysAddr, VirtAddr};
 
-use boot_ffi::{KernelArgs, PHYS_MAP_OFFSET};
+use alloc::vec;
+use boot_ffi::{KernelArgs, KERNEL_ARGS_MDL_SIZE, PHYS_MAP_OFFSET};
 use core::fmt::Write;
 use uart_16550::SerialPort;
 
@@ -186,24 +187,50 @@ fn efi_main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
 
     info!("Initializing kernel args struct");
 
-    let args = unsafe {
-        &mut *(system_table
-            .boot_services()
-            .allocate_pool(MemoryType::LOADER_DATA, size_of::<KernelArgs>())
-            .expect_success("Failed to allocate kernel args buffer")
-            as *mut KernelArgs)
-    };
+    let p_args = system_table
+        .boot_services()
+        .allocate_pool(MemoryType::LOADER_DATA, size_of::<KernelArgs>())
+        .expect_success("Failed to allocate kernel args buffer")
+        as *mut KernelArgs;
+
+    unsafe {
+        p_args.write_bytes(0, 1);
+    }
+
+    let args = unsafe { &mut *p_args };
 
     let (_, mmap_it) = system_table
         .boot_services()
         .memory_map(mmap_buf)
         .expect_success("Failed to get memory map");
 
-    for (i, md) in mmap_it.chain(&k_mdl).enumerate() {
-        match args.mmap.get_mut(i) {
-            Some(ent) => *ent = *md,
-            None => panic!("Memory descriptors do not fit into KernelArgs"),
+    let mut final_mmap = vec![];
+
+    for md in mmap_it {
+        'inner: for kmd in &k_mdl {
+            if md.ty == kmd.ty && md.phys_start == kmd.phys_start {
+                final_mmap.push(*kmd);
+                break 'inner;
+            }
         }
+        final_mmap.push(*md);
+    }
+
+    if final_mmap.len() > KERNEL_ARGS_MDL_SIZE {
+        panic!(&format!(
+            "Memory map of len {} does not fit into len {}",
+            final_mmap.len(),
+            KERNEL_ARGS_MDL_SIZE
+        ))
+    }
+
+    for i in args.mmap.iter_mut() {
+        *i = MemoryDescriptor::default();
+    }
+
+    for (i, md) in final_mmap.iter().enumerate() {
+        info!("{:?}", md);
+        args.mmap[i] = *md;
     }
 
     info!(

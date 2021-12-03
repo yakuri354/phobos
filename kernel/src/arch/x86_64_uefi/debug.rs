@@ -15,7 +15,7 @@ lazy_static! {
 static DBG_LOGGER: SerialLogger = SerialLogger {};
 
 pub fn init_debug_logger() -> Result<(), SetLoggerError> {
-    log::set_logger(&DBG_LOGGER).map(|()| log::set_max_level(LevelFilter::Info))
+    log::set_logger(&DBG_LOGGER).map(|()| log::set_max_level(LevelFilter::Debug))
 }
 
 struct SerialLogger;
@@ -27,7 +27,7 @@ impl log::Log for SerialLogger {
 
     fn log(&self, record: &Record) {
         SERIAL1.lock().write_fmt(
-            format_args!("{}: {}", record.level(), record.args()),
+            format_args!("{}: {}\n", record.level(), record.args()),
             // format_args!(
             //     "{:>8}: {} ({}, {}:{})\n",
             //     record.level(),
