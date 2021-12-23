@@ -2,9 +2,9 @@
 members = [
     "libc",
     "kernel",
-    "kernel/src/arch/x86_64_uefi/boot",
+    "kernel/src/arch/amd64/boot",
 ]
 default-members = [
     "kernel",
-    "kernel/src/arch/x86_64_uefi/boot"
+    "kernel/src/arch/amd64/boot"
 ]

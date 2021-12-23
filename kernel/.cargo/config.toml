@@ -1,2 +1,2 @@
 [build]
-target = "src/arch/x86_64_uefi/x86_64-unknown-kernel.json"
+target = "src/arch/amd64/x86_64-unknown-kernel.json"

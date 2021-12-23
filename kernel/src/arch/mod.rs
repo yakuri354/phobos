@@ -1,6 +1,6 @@
-mod x86_64_uefi;
+mod amd64;
 #[cfg(target_arch = "x86_64")]
-pub use x86_64_uefi::*;
+pub use amd64::*;
 
 mod aarch64;
 #[cfg(target_arch = "aarch64")]

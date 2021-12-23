@@ -14,7 +14,7 @@
   "features": "-mmx,-sse,+soft-float",
   "pre-link-args": {
     "ld.lld": [
-      "-T", "kernel/src/arch/x86_64_uefi/link.ld"
+      "-T", "kernel/src/arch/amd64/link.ld"
      ]
   }
 }
