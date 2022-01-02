@@ -1,5 +1,5 @@
 use crate::arch::PhysAddr;
-use crate::arch::FRAME_SIZE;
+use crate::arch::PAGE_SIZE;
 
 pub mod alloc;
 
@@ -27,15 +27,21 @@ pub struct PageFrameRange {
 
 impl PageFrameRange {
     pub fn new(start: PhysAddr, pages: usize) -> Option<PageFrameRange> {
-        if start.is_aligned(FRAME_SIZE as u64) {
+        if start.is_aligned(PAGE_SIZE as u64) {
             Some(PageFrameRange { start, pages })
         } else {
             None
         }
     }
-    pub fn start(&self) -> PhysAddr { self.start }
-    pub fn page_count(&self) -> usize { self.pages }
-    pub fn end(&self) -> PhysAddr { self.start + self.pages * FRAME_SIZE }
+    pub fn start(&self) -> PhysAddr {
+        self.start
+    }
+    pub fn page_count(&self) -> usize {
+        self.pages
+    }
+    pub fn end(&self) -> PhysAddr {
+        self.start + self.pages * PAGE_SIZE
+    }
 }
 
 #[repr(transparent)]

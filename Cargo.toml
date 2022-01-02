@@ -2,6 +2,7 @@
 members = [
     "libc",
     "kernel",
+    "kernel/src/mm/alloc/liballoc",
     "kernel/src/arch/amd64/boot",
 ]
 default-members = [

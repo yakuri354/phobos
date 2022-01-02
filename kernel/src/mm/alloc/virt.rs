@@ -1,6 +1,11 @@
-//! The virtual memory manager is responsible for mapping
-//! allocated pages
+//! The virtual memory manager is responsible managing pages, etc.
 
-pub struct VirtualMemoryManager {
-    
+use crate::mm::alloc::buddy::BuddyAlloc;
+
+pub struct VirtualMemoryAllocator {
+    phys_alloc: BuddyAlloc
+}
+
+impl VirtualMemoryAllocator {
+
 }

@@ -6,8 +6,8 @@ use lazy_static::lazy_static;
 use log::info;
 use spin::Mutex as Spinlock;
 use uart_16550::SerialPort;
-use uefi::Status;
 use uefi::table::runtime::ResetType;
+use uefi::Status;
 pub use x86_64::{PhysAddr, VirtAddr};
 
 use boot_ffi::KernelArgs;
@@ -17,11 +17,12 @@ use crate::kernel_main;
 
 pub mod const_data;
 pub mod debug;
-pub mod interrupt;
 pub mod fb;
+pub mod interrupt;
 pub mod mem;
+pub mod bit_ops;
 
-pub use mem::FRAME_SIZE;
+pub use mem::PAGE_SIZE;
 
 #[no_mangle]
 pub unsafe extern "C" fn _start(args: *mut KernelArgs) -> ! {

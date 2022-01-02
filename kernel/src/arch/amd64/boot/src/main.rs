@@ -158,6 +158,16 @@ fn efi_main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
 
     let (entry, k_mdl) = elf::map_elf(k_buf, &mut rpt, &mut system_table);
 
+    // Remove the lowest page to trap NULL pointer dereference bugs
+    unsafe {
+        rpt.update_flags(
+            Page::from_start_address(VirtAddr::new(0)).unwrap(),
+            PageTableFlags::empty(),
+        )
+        .unwrap()
+        .flush();
+    }
+
     info!("Press any key to jump into kernel...");
 
     let console = unsafe {
@@ -206,11 +216,11 @@ fn efi_main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
 
     let mut final_mmap = vec![];
 
-    for md in mmap_it {
-        'inner: for kmd in &k_mdl {
+    'outer: for md in mmap_it {
+        for kmd in &k_mdl {
             if md.ty == kmd.ty && md.phys_start == kmd.phys_start {
                 final_mmap.push(*kmd);
-                break 'inner;
+                continue 'outer;
             }
         }
         final_mmap.push(*md);

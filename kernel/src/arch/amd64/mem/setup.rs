@@ -11,10 +11,10 @@ use x86_64::structures::paging::{
 };
 use x86_64::{PhysAddr, VirtAddr};
 
-pub use boot_ffi::PHYS_MAP_OFFSET;
+use super::PAGE_SIZE;
+use crate::arch::mem::PHYS_MAP_OFFSET;
 use uefi::ResultExt;
 use x86_64::registers::control::{Cr3, Cr4};
-use super::FRAME_SIZE;
 
 /// This very basic allocator is needed for bootstrapping paging and another better allocator
 pub struct WatermarkAlloc {
@@ -30,8 +30,8 @@ impl WatermarkAlloc {
         }
     }
     pub fn alloc_pages(&mut self, pages: usize) -> Option<PhysAddr> {
-        let new = self.curr + pages * FRAME_SIZE;
-        if new > self.range.start() + self.range.page_count() * FRAME_SIZE {
+        let new = self.curr + pages * PAGE_SIZE;
+        if new > self.range.start() + self.range.page_count() * PAGE_SIZE {
             None
         } else {
             let curr = self.curr;
@@ -43,18 +43,9 @@ impl WatermarkAlloc {
         match self.alloc_pages(pages) {
             None => None,
             Some(addr) => {
-                unsafe { (addr.as_u64() as *mut u8).write_bytes(0, pages * FRAME_SIZE) };
+                unsafe { (addr.as_u64() as *mut u8).write_bytes(0, pages * PAGE_SIZE) };
                 Some(addr)
             }
-        }
-    }
-}
-
-impl From<MemoryDescriptor> for PageFrameRange {
-    fn from(desc: MemoryDescriptor) -> Self {
-        PageFrameRange {
-            start: PhysAddr::new(desc.phys_start),
-            pages: desc.page_count as usize,
         }
     }
 }
@@ -136,7 +127,13 @@ pub unsafe fn init(args: &mut KernelArgs) {
         temp_alloc_region
     );
 
-    let mut wm_alloc = WatermarkAlloc::new((*temp_alloc_region).into());
+    let mut wm_alloc = WatermarkAlloc::new(
+        PageFrameRange::new(
+            PhysAddr::new(temp_alloc_region.phys_start),
+            temp_alloc_region.page_count as usize,
+        )
+        .unwrap(),
+    );
 
     debug!("Allocating new PML4");
 
@@ -152,7 +149,7 @@ pub unsafe fn init(args: &mut KernelArgs) {
     debug!("Allocating new UEFI memory map");
 
     let new_desc = &mut *(wm_alloc
-        .alloc_zeroed_pages(size_of::<MemoryDescriptor>() * 512 / FRAME_SIZE)
+        .alloc_zeroed_pages(size_of::<MemoryDescriptor>() * 512 / PAGE_SIZE)
         .expect("Could not allocate memory for new EFI memory map")
         .as_u64() as *mut [MemoryDescriptor; 512]);
 
@@ -175,7 +172,7 @@ pub unsafe fn init(args: &mut KernelArgs) {
                     start: Page::from_start_address(VirtAddr::new(desc.virt_start))
                         .expect("Memory map VA unaligned"),
                     end: Page::from_start_address(VirtAddr::new(
-                        desc.virt_start + desc.page_count * FRAME_SIZE as u64,
+                        desc.virt_start + desc.page_count * PAGE_SIZE as u64,
                     ))
                     .unwrap(),
                 },
@@ -185,16 +182,16 @@ pub unsafe fn init(args: &mut KernelArgs) {
                 &mut wm_alloc,
             )
         } else if desc.att.contains(MemoryAttribute::RUNTIME) {
-            new_desc[i].virt_start = desc.phys_start + PHYS_MAP_OFFSET;
+            new_desc[i].virt_start = desc.phys_start + PHYS_MAP_OFFSET as u64;
 
             map_pages_to_temp_table(
                 PageRange {
                     start: Page::from_start_address(VirtAddr::new(
-                        desc.phys_start + PHYS_MAP_OFFSET,
+                        desc.phys_start + PHYS_MAP_OFFSET as u64,
                     ))
                     .expect("Memory map VA unaligned"),
                     end: Page::from_start_address(VirtAddr::new(
-                        desc.phys_start + PHYS_MAP_OFFSET + desc.page_count * FRAME_SIZE as u64,
+                        desc.phys_start + PHYS_MAP_OFFSET as u64 + desc.page_count * PAGE_SIZE as u64,
                     ))
                     .unwrap(),
                 },

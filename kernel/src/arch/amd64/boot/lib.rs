@@ -14,8 +14,6 @@ pub const KERNEL_RW_MEM_TYPE: u32 = 0x80000002;
 pub const KERNEL_RO_MEM_TYPE: u32 = 0x80000003;
 pub const KERNEL_RWX_MEM_TYPE: u32 = 0x80000004;
 
-pub const PHYS_MAP_OFFSET: u64 = 0xFFFFF00000000000;
-
 #[repr(C)]
 pub struct KernelArgs {
     pub mmap: [MemoryDescriptor; KERNEL_ARGS_MDL_SIZE],

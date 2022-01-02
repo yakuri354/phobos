@@ -13,6 +13,8 @@
       <sourceFolder url="file://$MODULE_DIR$/kernel/src/arch/aarch64/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/kernel/src/arch/x86_64_uefi/boot/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/kernel/src/arch/x86_64_uefi/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/kernel/src/arch/amd64/boot/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/kernel/src/mm/alloc/liballoc/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />
