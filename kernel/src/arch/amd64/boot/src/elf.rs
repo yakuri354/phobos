@@ -1,6 +1,6 @@
 use crate::UefiAlloc;
 use alloc::vec::Vec;
-use boot_ffi::*;
+use boot_lib::*;
 use core::mem::transmute;
 use core::panic;
 use goblin::elf::Elf;

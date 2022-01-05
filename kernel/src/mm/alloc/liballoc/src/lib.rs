@@ -1,6 +1,9 @@
 #![no_std]
 #![feature(c_variadic)]
 
+#[allow(non_camel_case_types)]
+#[allow(non_upper_case_globals)]
+#[allow(dead_code)]
 mod bindings;
 
 extern crate alloc;
@@ -98,7 +101,7 @@ unsafe extern "C" fn liballoc_free(addr: *mut c_void, count: c_int) -> c_int {
 unsafe extern "C" fn liballoc_printf(str: *const c_char, mut args: ...) -> c_int {
     let mut s = String::new();
     let bytes_written = format(str, args.as_va_list(), output::fmt_write(&mut s));
-    log::debug!("{}", s);
+    debug!("{}", s);
     bytes_written
 }
 
@@ -115,7 +118,7 @@ unsafe impl GlobalAlloc for LiballocAllocator {
         bindings::__kfree(ptr as _)
     }
 
-    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+    unsafe fn realloc(&self, ptr: *mut u8, _: Layout, new_size: usize) -> *mut u8 {
         debug_assert!(GLOBAL_LIB_ALLOC_INIT.load(Ordering::Relaxed));
         bindings::__krealloc(ptr as _, new_size) as _
     }

@@ -4,8 +4,10 @@ members = [
     "kernel",
     "kernel/src/mm/alloc/liballoc",
     "kernel/src/arch/amd64/boot",
+    "kernel/src/arch/amd64/boot/boot_lib"
 ]
 default-members = [
     "kernel",
-    "kernel/src/arch/amd64/boot"
+    "kernel/src/arch/amd64/boot",
+    "kernel/src/arch/amd64/boot/boot_lib"
 ]

@@ -24,12 +24,20 @@ checksum = "cf1de2fe8c75bc145a2f577add951f8134889b4795d47466a54a5c846d691693"
 name = "boot"
 version = "0.1.0"
 dependencies = [
+ "boot_lib",
  "goblin",
  "log",
  "uart_16550",
  "uefi",
  "uefi-services",
  "x86_64",
+]
+
+[[package]]
+name = "boot_lib"
+version = "0.1.0"
+dependencies = [
+ "uefi",
 ]
 
 [[package]]
@@ -102,7 +110,8 @@ dependencies = [
 name = "kernel"
 version = "0.1.0"
 dependencies = [
- "boot",
+ "bit_field 0.10.1",
+ "boot_lib",
  "lazy_static",
  "liballoc",
  "log",

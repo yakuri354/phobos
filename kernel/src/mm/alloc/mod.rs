@@ -1,12 +1,14 @@
+use crate::arch::PAGE_SIZE;
+use crate::mm::alloc::buddy::{BuddyAlloc, PagedBuddyAllocator};
+use crate::sync::irq_lock::{IRQSpinlock, InterruptGuard};
 use core::alloc::{GlobalAlloc, Layout};
+use core::ptr::NonNull;
 use core::sync::atomic::AtomicBool;
 use liballoc::LiballocAllocator;
 use spin::{Mutex, Spin};
-use crate::sync::irq_lock::IRQSpinlock;
-use crate::arch::PAGE_SIZE;
-use crate::mm::alloc::buddy::{PagedBuddyAllocator, BuddyAlloc, log2_ceil};
 
 mod buddy;
+pub mod setup;
 mod virt;
 
 #[derive(Debug)]
@@ -26,18 +28,32 @@ impl AllocatorStats {
     }
 }
 
+struct Locked<T> {
+    inner: IRQSpinlock<T>,
+}
+
+impl<T> Locked<T> {
+    pub const fn new(data: T) -> Self {
+        Self {
+            inner: IRQSpinlock::new(data),
+        }
+    }
+
+    pub fn lock(&self) -> InterruptGuard<T> {
+        self.inner.lock()
+    }
+}
+
 static ALLOCATOR_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 // TODO Fix global_allocator collision and implement a global allocator
 
-// #[global_allocator]
-// static GLOBAL_ALLOC: GlobalAllocator = GlobalAllocator;
-// static GLOBAL_ALLOCATOR_LOCK: IRQSpinlock<()> = IRQSpinlock::new(());
-// static mut GLOBAL_BUDDY: BuddyAlloc = BuddyAlloc::new();
+#[global_allocator]
+static GLOBAL_ALLOC: Locked<GlobalAllocator> = Locked::new(GlobalAllocator);
 
 pub struct GlobalAllocator;
 
-unsafe impl GlobalAlloc for GlobalAllocator {
+unsafe impl GlobalAlloc for Locked<GlobalAllocator> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         todo!()
     }

@@ -1,8 +1,45 @@
+use core::mem::MaybeUninit;
 use core::ptr::{null_mut, NonNull};
 use core::slice::Iter;
-use core::mem::MaybeUninit;
 
-/// A circular doubly linked list head
+/// When a movable head is needed
+pub struct CDLListHead {
+    node: Option<NonNull<CDLListNode>>,
+}
+
+impl CDLListHead {
+    pub fn new() -> Self {
+        Self { node: None }
+    }
+
+    pub unsafe fn push(&mut self, new: NonNull<CDLListNode>) {
+        match self.node {
+            Some(mut node) => {
+                node.as_mut().push_back(new);
+            }
+            None => {
+                CDLListNode::init(new.cast());
+            }
+        }
+        self.node = Some(new)
+    }
+
+    pub fn pop(&mut self) -> Option<NonNull<()>> {
+        match self.node {
+            None => None,
+            Some(mut a) => {
+                unsafe { a.as_mut().remove() }
+                Some(a.cast())
+            }
+        }
+    }
+
+    pub fn peek(&self) -> Option<NonNull<CDLListNode>> {
+        self.node
+    }
+}
+
+/// A circular doubly linked list node
 pub struct CDLListNode {
     next: NonNull<CDLListNode>,
     prev: NonNull<CDLListNode>,
@@ -19,13 +56,13 @@ impl CDLListNode {
 
     /// Initialize the list head
     #[inline]
-    pub unsafe fn init(mut new: MaybeUninit<Self>) -> Self {
-        new.write(CDLListNode {
-            next: NonNull::from(new.assume_init_ref()),
-            prev: NonNull::from(new.assume_init_ref()),
-        });
-
-        new.assume_init()
+    pub unsafe fn init(mut new: NonNull<MaybeUninit<Self>>) {
+        unsafe {
+            new.as_mut().write(CDLListNode {
+                next: new.cast(),
+                prev: new.cast(),
+            });
+        }
     }
 
     /// Push an entry next to itself
@@ -33,7 +70,7 @@ impl CDLListNode {
     pub unsafe fn push_next(&mut self, mut ptr: NonNull<CDLListNode>) {
         *ptr.as_mut() = CDLListNode {
             next: self.next,
-            prev: NonNull::from(& *(self as *const _)),
+            prev: NonNull::from(&*(self as *const _)),
         };
         self.next = ptr;
     }
@@ -42,7 +79,7 @@ impl CDLListNode {
     #[inline]
     pub unsafe fn push_back(&mut self, mut ptr: NonNull<CDLListNode>) {
         *ptr.as_mut() = CDLListNode {
-            next: NonNull::from(& *(self as *const _)),
+            next: NonNull::from(&*(self as *const _)),
             prev: self.prev,
         };
         self.prev = ptr;
@@ -50,15 +87,17 @@ impl CDLListNode {
 
     /// Pop the next list entry (no-op if the list contains only 1 entry)
     #[inline]
-    pub fn pop_next_unchecked(&mut self) -> NonNull<CDLListNode> {
+    pub fn pop_next_unchecked(&mut self) -> NonNull<()> {
         let popped = self.next;
-        unsafe { self.next = self.next.as_ref().next; }
-        popped
+        unsafe {
+            self.next = self.next.as_ref().next;
+        }
+        popped.cast()
     }
 
     #[inline]
-    pub fn pop_next(&mut self) -> Option<NonNull<CDLListNode>> {
-        if self.next == unsafe { NonNull::from(& *(self as *const _)) } {
+    pub fn pop_next(&mut self) -> Option<NonNull<()>> {
+        if self.next == unsafe { NonNull::from(&*(self as *const _)) } {
             None
         } else {
             Some(self.pop_next_unchecked())
@@ -67,15 +106,17 @@ impl CDLListNode {
 
     /// Pop the previous entry (no-op if the list contains only 1 entry)
     #[inline]
-    pub fn pop_back_unchecked(&mut self) -> NonNull<CDLListNode> {
+    pub fn pop_back_unchecked(&mut self) -> NonNull<()> {
         let popped = self.prev;
-        unsafe { self.prev = self.prev.as_ref().prev; }
-        popped
+        unsafe {
+            self.prev = self.prev.as_ref().prev;
+        }
+        popped.cast()
     }
 
     #[inline]
-    pub fn pop_back(&mut self) -> Option<NonNull<CDLListNode>> {
-        if self.prev == unsafe { NonNull::from(& *(self as *const _)) } {
+    pub fn pop_back(&mut self) -> Option<NonNull<()>> {
+        if self.prev == unsafe { NonNull::from(&*(self as *const _)) } {
             None
         } else {
             Some(self.pop_back_unchecked())
@@ -89,8 +130,8 @@ impl CDLListNode {
             self.prev.as_mut().next = self.next;
         }
 
-        if cfg!(debug_assertions) {
-            unsafe { *self = core::mem::zeroed(); }
+        unsafe {
+            *self = core::mem::zeroed();
         }
     }
 

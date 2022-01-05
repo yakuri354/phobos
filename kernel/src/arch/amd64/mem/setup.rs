@@ -1,5 +1,5 @@
 use crate::mm::{PageFrameRange, SystemMemoryInfo};
-use boot_ffi::*;
+use boot_lib::*;
 use core::borrow::Borrow;
 use core::mem::size_of;
 use core::ops::{Deref, DerefMut};
@@ -13,49 +13,18 @@ use x86_64::{PhysAddr, VirtAddr};
 
 use super::PAGE_SIZE;
 use crate::arch::mem::PHYS_MAP_OFFSET;
+use crate::mm::alloc::setup::{BootMemAllocator, BumpAlloc};
+use core::alloc::Layout;
+use core::ptr::NonNull;
 use uefi::ResultExt;
 use x86_64::registers::control::{Cr3, Cr4};
-
-/// This very basic allocator is needed for bootstrapping paging and another better allocator
-pub struct WatermarkAlloc {
-    curr: PhysAddr,
-    range: PageFrameRange,
-}
-
-impl WatermarkAlloc {
-    pub unsafe fn new(range: PageFrameRange) -> Self {
-        Self {
-            curr: range.start(),
-            range,
-        }
-    }
-    pub fn alloc_pages(&mut self, pages: usize) -> Option<PhysAddr> {
-        let new = self.curr + pages * PAGE_SIZE;
-        if new > self.range.start() + self.range.page_count() * PAGE_SIZE {
-            None
-        } else {
-            let curr = self.curr;
-            self.curr = new;
-            Some(curr)
-        }
-    }
-    pub fn alloc_zeroed_pages(&mut self, pages: usize) -> Option<PhysAddr> {
-        match self.alloc_pages(pages) {
-            None => None,
-            Some(addr) => {
-                unsafe { (addr.as_u64() as *mut u8).write_bytes(0, pages * PAGE_SIZE) };
-                Some(addr)
-            }
-        }
-    }
-}
 
 pub unsafe fn map_pages_to_temp_table(
     pages: PageRange<Size4KiB>,
     table: &mut PageTable,
     parent_flags: PageTableFlags,
     flags: PageTableFlags,
-    alloc: &mut WatermarkAlloc,
+    alloc: &mut dyn BootMemAllocator,
 ) {
     for page in pages {
         map_page_to_temp_table(page, table, parent_flags, flags, alloc);
@@ -67,7 +36,7 @@ pub unsafe fn map_page_to_temp_table(
     mut pml4: &mut PageTable,
     parent_flags: PageTableFlags,
     flags: PageTableFlags,
-    alloc: &mut WatermarkAlloc,
+    alloc: &mut dyn BootMemAllocator,
 ) {
     for i in 1..=4 {
         let idx = match i {
@@ -84,9 +53,13 @@ pub unsafe fn map_page_to_temp_table(
         };
         if !entry.flags().contains(PageTableFlags::PRESENT) {
             entry.set_addr(
-                alloc
-                    .alloc_zeroed_pages(1)
-                    .expect("Could not allocate memory for a page table"),
+                PhysAddr::new(
+                    NonNull::new(
+                        alloc.alloc_raw(Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap()),
+                    )
+                    .expect("Could not allocate memory for a page table")
+                    .as_ptr() as _,
+                ),
                 loc_flags,
             );
         } else {
@@ -127,20 +100,16 @@ pub unsafe fn init(args: &mut KernelArgs) {
         temp_alloc_region
     );
 
-    let mut wm_alloc = WatermarkAlloc::new(
-        PageFrameRange::new(
-            PhysAddr::new(temp_alloc_region.phys_start),
-            temp_alloc_region.page_count as usize,
-        )
-        .unwrap(),
+    let mut bm_alloc = BumpAlloc::new(
+        temp_alloc_region.phys_start as _,
+        (temp_alloc_region.phys_start + temp_alloc_region.page_count * 4096) as _,
     );
 
     debug!("Allocating new PML4");
 
-    let pml4_page =
-        unsafe { wm_alloc.alloc_zeroed_pages(1) }.expect("Could not allocate memory for PML4");
+    let pml4_page = bm_alloc.alloc_zeroed(Layout::from_size_align(4096, 4096).unwrap());
 
-    let pml4 = &mut *(pml4_page.as_u64() as *mut PageTable);
+    let pml4 = &mut *(pml4_page.as_ptr() as *mut PageTable);
 
     debug!("Setting up recursive paging");
 
@@ -148,10 +117,9 @@ pub unsafe fn init(args: &mut KernelArgs) {
 
     debug!("Allocating new UEFI memory map");
 
-    let new_desc = &mut *(wm_alloc
-        .alloc_zeroed_pages(size_of::<MemoryDescriptor>() * 512 / PAGE_SIZE)
-        .expect("Could not allocate memory for new EFI memory map")
-        .as_u64() as *mut [MemoryDescriptor; 512]);
+    let new_desc = &mut *(bm_alloc
+        .alloc_zeroed(Layout::from_size_align(size_of::<MemoryDescriptor>() * 512, 4096).unwrap())
+        .as_ptr() as *mut [MemoryDescriptor; 512]);
 
     info!("Remapping kernel memory");
 
@@ -179,7 +147,7 @@ pub unsafe fn init(args: &mut KernelArgs) {
                 pml4,
                 PageTableFlags::PRESENT | PageTableFlags::GLOBAL | PageTableFlags::WRITABLE,
                 PageTableFlags::PRESENT | PageTableFlags::GLOBAL | flags,
-                &mut wm_alloc,
+                &mut bm_alloc,
             )
         } else if desc.att.contains(MemoryAttribute::RUNTIME) {
             new_desc[i].virt_start = desc.phys_start + PHYS_MAP_OFFSET as u64;
@@ -191,14 +159,16 @@ pub unsafe fn init(args: &mut KernelArgs) {
                     ))
                     .expect("Memory map VA unaligned"),
                     end: Page::from_start_address(VirtAddr::new(
-                        desc.phys_start + PHYS_MAP_OFFSET as u64 + desc.page_count * PAGE_SIZE as u64,
+                        desc.phys_start
+                            + PHYS_MAP_OFFSET as u64
+                            + desc.page_count * PAGE_SIZE as u64,
                     ))
                     .unwrap(),
                 },
                 pml4,
                 PageTableFlags::PRESENT | PageTableFlags::GLOBAL | PageTableFlags::WRITABLE,
                 PageTableFlags::PRESENT | PageTableFlags::GLOBAL | PageTableFlags::WRITABLE,
-                &mut wm_alloc,
+                &mut bm_alloc,
             )
         }
     }
@@ -214,7 +184,8 @@ pub unsafe fn init(args: &mut KernelArgs) {
 
     let (_, flags) = Cr3::read();
     Cr3::write(
-        PhysFrame::from_start_address(pml4_page).expect("PML4 unaligned"),
+        PhysFrame::from_start_address(PhysAddr::new(pml4_page.as_ptr() as _))
+            .expect("PML4 unaligned"),
         flags,
     );
 

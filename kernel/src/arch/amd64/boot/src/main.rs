@@ -34,7 +34,7 @@ use x86_64::structures::paging::{
 use x86_64::{PhysAddr, VirtAddr};
 
 use alloc::vec;
-use boot_ffi::{KernelArgs, KERNEL_ARGS_MDL_SIZE, PHYS_MAP_OFFSET};
+use boot_lib::{KernelArgs, KERNEL_ARGS_MDL_SIZE, PHYS_MAP_OFFSET};
 use core::fmt::Write;
 use uart_16550::SerialPort;
 
@@ -46,10 +46,9 @@ struct UefiAlloc();
 
 unsafe impl FrameAllocator<Size4KiB> for UefiAlloc {
     fn allocate_frame(&mut self) -> Option<PhysFrame<Size4KiB>> {
-        let count = 1;
         let addr = unsafe { uefi_services::system_table().as_mut() }
             .boot_services()
-            .allocate_pages(AllocateType::AnyPages, MemoryType::LOADER_DATA, count)
+            .allocate_pages(AllocateType::AnyPages, MemoryType::LOADER_DATA, 1)
             .expect_success("Failed to allocate a page");
         Some(PhysFrame::from_start_address(PhysAddr::new(addr)).unwrap())
     }
@@ -115,17 +114,9 @@ fn efi_main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
         )
     };
 
-    let k_buf = unsafe {
-        &mut *slice_from_raw_parts_mut(
-            system_table
-                .boot_services()
-                .allocate_pool(MemoryType::LOADER_DATA, k_size)
-                .expect_success("Failed to allocate temporary kernel pool") as *mut u8,
-            k_size,
-        )
-    };
+    let mut k_buf = Vec::with_capacity(k_size);
 
-    k_fd.read(k_buf)
+    k_fd.read(&mut k_buf)
         .expect_success("Failed to read kernel file");
 
     k_fd.close();
@@ -156,7 +147,7 @@ fn efi_main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
 
     info!("Mapping kernel image");
 
-    let (entry, k_mdl) = elf::map_elf(k_buf, &mut rpt, &mut system_table);
+    let (entry, k_mdl) = elf::map_elf(&mut k_buf, &mut rpt, &mut system_table);
 
     // Remove the lowest page to trap NULL pointer dereference bugs
     unsafe {
@@ -185,15 +176,7 @@ fn efi_main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     info!("Allocating memory map");
 
     let mmap_size = system_table.boot_services().memory_map_size() + 0x2000;
-    let mmap_buf = unsafe {
-        &mut *slice_from_raw_parts_mut(
-            system_table
-                .boot_services()
-                .allocate_pool(MemoryType::LOADER_DATA, mmap_size)
-                .expect_success("Failed to allocate memory map buffer"),
-            mmap_size,
-        )
-    };
+    let mut mmap_buf = Vec::with_capacity(mmap_size);
 
     info!("Initializing kernel args struct");
 
@@ -211,7 +194,7 @@ fn efi_main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
 
     let (_, mmap_it) = system_table
         .boot_services()
-        .memory_map(mmap_buf)
+        .memory_map(&mut mmap_buf)
         .expect_success("Failed to get memory map");
 
     let mut final_mmap = vec![];
@@ -249,7 +232,7 @@ fn efi_main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     );
 
     let (rt, _) = system_table
-        .exit_boot_services(handle, mmap_buf)
+        .exit_boot_services(handle, &mut mmap_buf)
         .expect_success("Failed to exit UEFI boot services");
 
     args.uefi_rst = rt;

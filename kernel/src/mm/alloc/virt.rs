@@ -3,9 +3,7 @@
 use crate::mm::alloc::buddy::BuddyAlloc;
 
 pub struct VirtualMemoryAllocator {
-    phys_alloc: BuddyAlloc
+    phys_alloc: BuddyAlloc,
 }
 
-impl VirtualMemoryAllocator {
-
-}
+impl VirtualMemoryAllocator {}

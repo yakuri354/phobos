@@ -24,7 +24,7 @@ impl<T> IRQSpinlock<T> {
     }
 }
 
-struct InterruptGuard<'a, T> {
+pub struct InterruptGuard<'a, T> {
     inner: MutexGuard<'a, T>,
     int_flag: bool,
 }

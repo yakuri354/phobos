@@ -4,6 +4,7 @@ pub const VERSION: &'static [u8; 4usize] = b"1.1\0";
 pub const ALIGNMENT: u32 = 16;
 pub const LIBALLOC_MAGIC: u32 = 3221340382;
 pub const LIBALLOC_DEAD: u32 = 3735936685;
+
 pub type size_t = ::cty::size_t;
 #[repr(C)]
 #[repr(align(16))]

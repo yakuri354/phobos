@@ -147,16 +147,16 @@ static void liballoc_dump()
 #endif
 
 	printf( "liballoc: ------ Memory data ---------------\n");
-	printf( "liballoc: System memory allocated: %i bytes\n", l_allocated );
-	printf( "liballoc: Memory in used (malloc'ed): %i bytes\n", l_inuse );
-	printf( "liballoc: Warning count: %i\n", l_warningCount );
-	printf( "liballoc: Error count: %i\n", l_errorCount );
-	printf( "liballoc: Possible overruns: %i\n", l_possibleOverruns );
+	printf( "liballoc: System memory allocated: %llu bytes\n", l_allocated );
+	printf( "liballoc: Memory in used (malloc'ed): %llu bytes\n", l_inuse );
+	printf( "liballoc: Warning count: %lli\n", l_warningCount );
+	printf( "liballoc: Error count: %lli\n", l_errorCount );
+	printf( "liballoc: Possible overruns: %lli\n", l_possibleOverruns );
 
 #ifdef DEBUG
 		while ( maj != NULL )
 		{
-			printf( "liballoc: %x: total = %i, used = %i\n",
+			printf( "liballoc: %p: total = %llu, used = %llu\n",
 						maj,
 						maj->size,
 						maj->usage );
@@ -164,7 +164,7 @@ static void liballoc_dump()
 			min = maj->first;
 			while ( min != NULL )
 			{
-				printf( "liballoc:    %x: %i bytes\n",
+				printf( "liballoc:    %p: %llu bytes\n",
 							min,
 							min->size );
 				min = min->next;
@@ -263,7 +263,7 @@ void *PREFIX(malloc)(size_t req_size)
     {
         l_warningCount += 1;
 #if defined DEBUG || defined INFO
-        printf( "liballoc: WARNING: alloc( 0 ) called from %x\n",
+        printf( "liballoc: WARNING: alloc( 0 ) called from %p\n",
 							__builtin_return_address(0) );
 		FLUSH();
 #endif
@@ -576,7 +576,7 @@ void *PREFIX(malloc)(size_t req_size)
 	FLUSH();
 #endif
 #if defined DEBUG || defined INFO
-    printf( "liballoc: WARNING: PREFIX(malloc)( %i ) returning NULL.\n", size);
+    printf( "liballoc: WARNING: PREFIX(malloc)( %zu ) returning NULL.\n", size);
 	liballoc_dump();
 	FLUSH();
 #endif
@@ -593,7 +593,7 @@ void PREFIX(free)(void *ptr)
     {
         l_warningCount += 1;
 #if defined DEBUG || defined INFO
-        printf( "liballoc: WARNING: PREFIX(free)( NULL ) called from %x\n",
+        printf( "liballoc: WARNING: PREFIX(free)( NULL ) called from %p\n",
 							__builtin_return_address(0) );
 		FLUSH();
 #endif
@@ -632,7 +632,7 @@ void PREFIX(free)(void *ptr)
         if ( min->magic == LIBALLOC_DEAD )
         {
 #if defined DEBUG || defined INFO
-            printf( "liballoc: ERROR: multiple PREFIX(free)() attempt on %x from %x.\n",
+            printf( "liballoc: ERROR: multiple PREFIX(free)() attempt on %p from %p.\n",
 									ptr,
 									__builtin_return_address(0) );
 			FLUSH();
@@ -641,7 +641,7 @@ void PREFIX(free)(void *ptr)
         else
         {
 #if defined DEBUG || defined INFO
-            printf( "liballoc: ERROR: Bad PREFIX(free)( %x ) called from %x\n",
+            printf( "liballoc: ERROR: Bad PREFIX(free)( %p ) called from %p\n",
 								ptr,
 								__builtin_return_address(0) );
 			FLUSH();
@@ -654,7 +654,7 @@ void PREFIX(free)(void *ptr)
     }
 
 #ifdef DEBUG
-    printf( "liballoc: %x PREFIX(free)( %x ): ",
+    printf( "liballoc: %p PREFIX(free)( %p ): ",
 				__builtin_return_address( 0 ),
 				ptr );
 	FLUSH();
@@ -772,7 +772,7 @@ void*   PREFIX(realloc)(void *p, size_t size)
         if ( min->magic == LIBALLOC_DEAD )
         {
 #if defined DEBUG || defined INFO
-            printf( "liballoc: ERROR: multiple PREFIX(free)() attempt on %x from %x.\n",
+            printf( "liballoc: ERROR: multiple PREFIX(free)() attempt on %p from %p.\n",
 										ptr,
 										__builtin_return_address(0) );
 				FLUSH();
@@ -781,7 +781,7 @@ void*   PREFIX(realloc)(void *p, size_t size)
         else
         {
 #if defined DEBUG || defined INFO
-            printf( "liballoc: ERROR: Bad PREFIX(free)( %x ) called from %x\n",
+            printf( "liballoc: ERROR: Bad PREFIX(free)( %p ) called from %p\n",
 									ptr,
 									__builtin_return_address(0) );
 				FLUSH();
