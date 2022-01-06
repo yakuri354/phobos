@@ -34,7 +34,7 @@ use x86_64::structures::paging::{
 use x86_64::{PhysAddr, VirtAddr};
 
 use alloc::vec;
-use boot_lib::{KernelArgs, KERNEL_ARGS_MDL_SIZE, PHYS_MAP_OFFSET};
+use boot_lib::{KernelArgs, KERNEL_ARGS_MDL_SIZE};
 use core::fmt::Write;
 use uart_16550::SerialPort;
 
@@ -152,7 +152,7 @@ fn efi_main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     // Remove the lowest page to trap NULL pointer dereference bugs
     unsafe {
         rpt.update_flags(
-            Page::from_start_address(VirtAddr::new(0)).unwrap(),
+            Page::<Size4KiB>::from_start_address(VirtAddr::new(0)).unwrap(),
             PageTableFlags::empty(),
         )
         .unwrap()

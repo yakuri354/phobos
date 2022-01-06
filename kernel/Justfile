@@ -5,7 +5,7 @@ dev cargo-params="" qemu-params="-s -d cpu_reset -serial stdio -no-reboot -no-sh
     fi
     cargo build {{ cargo-params }}
     kernel_path=$(cargo build {{ cargo-params }} --message-format=json 2> /dev/null | jq .executable\? | grep -v "null" | sed -e 's/^"//' -e 's/"$//')
-    pushd src/arch/x86_64_uefi/boot > /dev/null
+    pushd src/arch/amd64/boot > /dev/null
     cargo build {{ cargo-params }}
     efi_path=$(cargo build {{ cargo-params }} --message-format=json 2> /dev/null | jq .executable\? | grep -v "null" | sed -e 's/^"//' -e 's/"$//')
     popd > /dev/null

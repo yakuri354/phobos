@@ -1,0 +1,7 @@
+[package]
+name = "boot_lib"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+uefi = { version = "0.11.0", default_features = false }
