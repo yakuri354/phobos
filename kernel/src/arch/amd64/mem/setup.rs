@@ -18,6 +18,7 @@ use core::alloc::Layout;
 use core::ptr::NonNull;
 use uefi::ResultExt;
 use x86_64::registers::control::{Cr3, Cr4};
+use crate::mm::alloc::alloc_page;
 
 pub unsafe fn map_pages_to_temp_table(
     pages: PageRange<Size4KiB>,
@@ -107,7 +108,7 @@ pub unsafe fn init(args: &mut KernelArgs) {
 
     debug!("Allocating new PML4");
 
-    let pml4_page = bm_alloc.alloc_zeroed(Layout::from_size_align(4096, 4096).unwrap());
+    let pml4_page = alloc_page();
 
     let pml4 = &mut *(pml4_page.as_ptr() as *mut PageTable);
 

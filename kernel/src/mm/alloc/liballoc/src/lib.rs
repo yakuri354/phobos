@@ -23,6 +23,7 @@ pub type FnFreePages = fn(NonNull<u8>, i32) -> bool;
 
 static GLOBAL_LIB_ALLOC_INIT: AtomicBool = AtomicBool::new(false);
 static mut GLOBAL_LIB_ALLOC: Option<LibAllocAllocatorData> = None;
+static GLOBAL_LIB_ALLOC_LOCK: AtomicBool = AtomicBool::new(false);
 
 struct LibAllocAllocatorData {
     lock: FnLock,
