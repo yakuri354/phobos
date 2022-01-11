@@ -1,12 +1,7 @@
-use alloc::borrow::ToOwned;
-use core::ptr::NonNull;
-use x86_64::PhysAddr;
-use x86_64::structures::paging::{FrameAllocator, PhysFrame, Size4KiB};
-use x86_64::structures::paging::frame::PhysFrameRange;
-use crate::arch::mem::PHYS_MAP_OFFSET;
-use crate::data::list::CDLListHead;
-use crate::mm::alloc::SinglePageAllocator;
-use crate::mm::{PageFrameRange, Pointable};
+use crate::{data::list::CDLListHead, mm::alloc::SinglePageAllocator};
+
+use crate::data::misc::Pointable;
+use x86_64::structures::paging::{frame::PhysFrameRange, FrameAllocator, PhysFrame, Size4KiB};
 
 pub struct StackAllocator {
     head: CDLListHead,
@@ -32,7 +27,7 @@ unsafe impl SinglePageAllocator for StackAllocator {
                 }
             }
             if i.end > range.end {
-                break
+                break;
             }
             if curr < i.end {
                 curr = i.end

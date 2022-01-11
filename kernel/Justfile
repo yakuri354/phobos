@@ -10,3 +10,9 @@ dev cargo-params="" qemu-params="-s -d cpu_reset -serial stdio -no-reboot -no-sh
     efi_path=$(cargo build {{ cargo-params }} --message-format=json 2> /dev/null | jq .executable\? | grep -v "null" | sed -e 's/^"//' -e 's/"$//')
     popd > /dev/null
     uefi-run --files $efi_path $kernel_path --bios {{ ovmf }} --qemu {{ qemu }} -- {{ qemu-params }}
+
+fix:
+    cargo fix --allow-dirty --allow-staged --bins
+
+fmt:
+    rustfmt ./**.rs

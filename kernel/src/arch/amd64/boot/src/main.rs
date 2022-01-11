@@ -1,42 +1,45 @@
 #![no_std]
 #![no_main]
 #![feature(abi_efiapi)]
-#![feature(asm)]
 
 extern crate alloc;
 
-use alloc::boxed::Box;
-use alloc::fmt::format;
-use alloc::format;
-use alloc::string::ToString;
-use alloc::vec::Vec;
-use core::mem::size_of;
-use core::ops::Not;
-use core::ptr::{slice_from_raw_parts, slice_from_raw_parts_mut};
+use alloc::{boxed::Box, string::ToString, vec::Vec};
+use arrayvec::ArrayVec;
+use core::mem::{size_of, uninitialized, zeroed, MaybeUninit};
+use uefi_services::system_table;
 
 use log::{debug, error, info};
-use uefi::prelude::*;
-use uefi::proto::console::gop::{FrameBuffer, GraphicsOutput};
-use uefi::proto::media::file::{File, FileAttribute, FileInfo, FileMode, RegularFile};
-use uefi::table::boot::{AllocateType, MemoryAttribute, MemoryDescriptor, MemoryType};
-use uefi::Event;
-use uefi_services::*;
-use x86_64::instructions::port::PortWriteOnly;
-use x86_64::registers::control::{Cr0, Cr0Flags, Cr3, Cr4, Efer, EferFlags};
-use x86_64::registers::read_rip;
-use x86_64::structures::idt::InterruptDescriptorTable;
-use x86_64::structures::paging::mapper::PageTableFrameMapping;
-use x86_64::structures::paging::page_table::PageTableEntry;
-use x86_64::structures::paging::{
-    FrameAllocator, MappedPageTable, Mapper, Page, PageTable, PageTableFlags, PhysFrame,
-    RecursivePageTable, Size4KiB,
+use uefi::{
+    prelude::*,
+    proto::media::file::{File, FileAttribute, FileMode, RegularFile},
+    table::boot::{AllocateType, MemoryDescriptor, MemoryType},
 };
-use x86_64::{PhysAddr, VirtAddr};
+
+use x86_64::{
+    align_up,
+    registers::control::{Cr0, Cr0Flags, Cr3, Cr4, Efer},
+    structures::paging::{
+        FrameAllocator, PageTable, PageTableFlags, PhysFrame, RecursivePageTable, Size4KiB,
+    },
+    PhysAddr, VirtAddr,
+};
 
 use alloc::vec;
-use boot_lib::{KernelArgs, KERNEL_ARGS_MDL_SIZE};
-use core::fmt::Write;
-use uart_16550::SerialPort;
+use boot_lib::{
+    KernelArgs, KernelEntryPoint, KERNEL_ARGS_MDL_SIZE, KERNEL_ARGS_MEM_TYPE, PHYS_MAP_OFFSET,
+    PTE_MEM_TYPE,
+};
+use core::{
+    hash::Hasher,
+    iter::FromIterator,
+    ptr::{addr_of_mut, NonNull},
+};
+use uefi::proto::console::gop::GraphicsOutput;
+use x86_64::structures::paging::{
+    mapper::{MapToError, TranslateResult},
+    Mapper, OffsetPageTable, Page, PageSize, Size1GiB, Size2MiB, Translate,
+};
 
 mod elf;
 
@@ -48,31 +51,120 @@ unsafe impl FrameAllocator<Size4KiB> for UefiAlloc {
     fn allocate_frame(&mut self) -> Option<PhysFrame<Size4KiB>> {
         let addr = unsafe { uefi_services::system_table().as_mut() }
             .boot_services()
-            .allocate_pages(AllocateType::AnyPages, MemoryType::LOADER_DATA, 1)
+            .allocate_pages(AllocateType::AnyPages, MemoryType::custom(PTE_MEM_TYPE), 1)
             .expect_success("Failed to allocate a page");
         Some(PhysFrame::from_start_address(PhysAddr::new(addr)).unwrap())
     }
 }
 
-#[entry]
-fn efi_main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
-    uefi_services::init(&system_table).expect_success("Failed to setup UEFI services");
-    system_table
-        .stdout()
-        .reset(false)
-        .expect_success("Failed to reset stdout");
+unsafe fn map_sized<S: PageSize, A: FrameAllocator<Size4KiB>, M>(
+    virt: VirtAddr,
+    phys: PhysAddr,
+    pages: u64,
+    flags: PageTableFlags,
+    parent_flags: PageTableFlags,
+    map: &mut M,
+    alloc: &mut A,
+) -> u64
+where
+    M: Mapper<S> + Sized,
+{
+    let mut left = pages;
+    let small_pages = S::SIZE / Size4KiB::SIZE;
+    if virt.is_aligned(S::SIZE) && phys.is_aligned(S::SIZE) {
+        while left >= small_pages {
+            let offset = (pages - left) * Size4KiB::SIZE;
+            map.map_to_with_table_flags(
+                Page::<S>::from_start_address(virt + offset).unwrap(),
+                PhysFrame::from_start_address(phys + offset).unwrap(),
+                flags,
+                parent_flags,
+                alloc,
+            )
+            .map_err(|e| match e {
+                MapToError::FrameAllocationFailed => error!("FrameAllocationFailed"),
+                MapToError::ParentEntryHugePage => error!("ParentEntryHugePage"),
+                MapToError::PageAlreadyMapped(x) => error!("PageAlreadyMapped: {:?}", x),
+            })
+            .ok()
+            .expect("Mapping failed")
+            .flush();
+            left -= small_pages;
+        }
+        pages - left
+    } else {
+        0
+    }
+}
+
+unsafe fn map_offset<A: FrameAllocator<Size4KiB>>(
+    virt: VirtAddr,
+    pages: u64,
+    map: &mut OffsetPageTable,
+    alloc: &mut A,
+    flags: PageTableFlags,
+    parent_flags: PageTableFlags,
+) {
+    assert!(virt.is_aligned(Size4KiB::SIZE));
+    let phys = PhysAddr::new(0);
+    let mut done = 0;
+    if !pages
+        .checked_mul(Size4KiB::SIZE)
+        .and_then(|x| virt.as_u64().checked_add(x))
+        .map(|x| x <= 0xFFFF_FFFF_FFFF_FFFF)
+        .unwrap_or(false)
+    {
+        panic!("Not enough memory to create mapping")
+    }
 
     info!(
-        "phobos x86_64 UEFI bootloader v{}",
-        env!("CARGO_PKG_VERSION")
+        "Mapping {:?} - {:?} --> {:?} - {:?}",
+        virt,
+        virt + Size4KiB::SIZE * pages,
+        PhysAddr::new(0),
+        PhysAddr::new(Size4KiB::SIZE * pages)
     );
-    let rev = system_table.uefi_revision();
-    info!("UEFI v{}.{}", rev.major(), rev.minor());
-    info!("CR0 -> {:?}", Cr0::read());
-    info!("CR4 -> {:?}", Cr4::read());
-    info!("EFER -> {:?}", Efer::read());
-    let (pml4_frame, cr3_flags) = Cr3::read();
-    info!("PML4 -> {:#x}", pml4_frame.start_address().as_u64());
+
+    done += map_sized::<Size1GiB, A, _>(
+        virt + done * Size4KiB::SIZE,
+        phys + done * Size4KiB::SIZE,
+        pages - done,
+        flags,
+        parent_flags,
+        map,
+        alloc,
+    );
+
+    done += map_sized::<Size2MiB, A, _>(
+        virt + done * Size4KiB::SIZE,
+        phys + done * Size4KiB::SIZE,
+        pages - done,
+        flags,
+        parent_flags,
+        map,
+        alloc,
+    );
+
+    done += map_sized::<Size4KiB, A, _>(
+        virt + done * Size4KiB::SIZE,
+        phys + done * Size4KiB::SIZE,
+        pages - done,
+        flags,
+        parent_flags,
+        map,
+        alloc,
+    );
+
+    assert_eq!(done, pages);
+}
+
+unsafe fn map_kernel<M: Mapper<Size4KiB>>(
+    handle: Handle,
+    system_table: &mut SystemTable<Boot>,
+    page_table: &mut M,
+) -> KernelEntryPoint {
+    info!("Opening FS");
+
     let fs = unsafe {
         &mut *system_table
             .boot_services()
@@ -114,128 +206,144 @@ fn efi_main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
         )
     };
 
-    let mut k_buf = Vec::with_capacity(k_size);
+    let mut k_buf = vec![0; k_size];
 
     k_fd.read(&mut k_buf)
         .expect_success("Failed to read kernel file");
 
     k_fd.close();
 
-    info!("Setting up recursive paging");
+    info!("Mapping kernel image into virtual address space");
 
-    let pml4 = unsafe { &mut *(pml4_frame.start_address().as_u64() as *mut PageTable) };
+    elf::map_elf(&mut k_buf, page_table, system_table)
+}
 
-    const REC_IDX: usize = 511;
-    const REC_ADDRESS: u64 = 0xfffffffffffff000;
-
-    let cr0 = Cr0::read();
-    unsafe { Cr0::write(cr0 & !Cr0Flags::WRITE_PROTECT) };
-
-    pml4[REC_IDX].set_addr(
-        PhysAddr::new(pml4_frame.start_address().as_u64()),
-        PageTableFlags::empty()
-            | PageTableFlags::PRESENT
-            | PageTableFlags::WRITABLE
-            | PageTableFlags::NO_EXECUTE
-            | PageTableFlags::NO_CACHE,
-    );
-
-    unsafe { Cr0::write(cr0) };
-
-    let mut rpt = RecursivePageTable::new(unsafe { &mut *(REC_ADDRESS as *mut _) })
-        .expect("Recursive page table not recognized");
-
-    info!("Mapping kernel image");
-
-    let (entry, k_mdl) = elf::map_elf(&mut k_buf, &mut rpt, &mut system_table);
-
-    // Remove the lowest page to trap NULL pointer dereference bugs
-    unsafe {
-        rpt.update_flags(
-            Page::<Size4KiB>::from_start_address(VirtAddr::new(0)).unwrap(),
-            PageTableFlags::empty(),
-        )
-        .unwrap()
-        .flush();
-    }
-
-    info!("Press any key to jump into kernel...");
-
-    let console = unsafe {
-        &*system_table
-            .boot_services()
-            .locate_protocol::<uefi::proto::console::text::Input>()
-            .expect_success("Could not locate Input")
-            .get()
-    };
-
+#[entry]
+fn efi_main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
+    uefi_services::init(&mut system_table).expect_success("Failed to setup UEFI services");
     system_table
-        .boot_services()
-        .wait_for_event(&mut [console.wait_for_key_event()]);
+        .stdout()
+        .reset(false)
+        .expect_success("Failed to reset stdout");
 
-    info!("Allocating memory map");
+    info!(
+        "phobos x86_64 UEFI bootloader v{}",
+        env!("CARGO_PKG_VERSION")
+    );
+    let rev = system_table.uefi_revision();
+    info!("UEFI v{}.{}", rev.major(), rev.minor());
+    info!("CR0 -> {:?}", Cr0::read());
+    info!("CR4 -> {:?}", Cr4::read());
+    info!("EFER -> {:?}", Efer::read());
+    let (pml4_frame, _) = Cr3::read();
+    info!("PML4 -> {:#x}", pml4_frame.start_address().as_u64());
+
+    info!("Loading memory map");
 
     let mmap_size = system_table.boot_services().memory_map_size() + 0x2000;
-    let mut mmap_buf = Vec::with_capacity(mmap_size);
-
-    info!("Initializing kernel args struct");
-
-    let p_args = system_table
-        .boot_services()
-        .allocate_pool(MemoryType::LOADER_DATA, size_of::<KernelArgs>())
-        .expect_success("Failed to allocate kernel args buffer")
-        as *mut KernelArgs;
-
-    unsafe {
-        p_args.write_bytes(0, 1);
-    }
-
-    let args = unsafe { &mut *p_args };
+    let mut mmap_buf = vec![0; mmap_size];
 
     let (_, mmap_it) = system_table
         .boot_services()
         .memory_map(&mut mmap_buf)
         .expect_success("Failed to get memory map");
 
-    let mut final_mmap = vec![];
+    let mut mmap: ArrayVec<MemoryDescriptor, 512> = ArrayVec::from_iter(mmap_it.map(Clone::clone));
 
-    'outer: for md in mmap_it {
-        for kmd in &k_mdl {
-            if md.ty == kmd.ty && md.phys_start == kmd.phys_start {
-                final_mmap.push(*kmd);
-                continue 'outer;
+    info!("Mapping physical memory at offset {:#x}", PHYS_MAP_OFFSET);
+
+    let cr0 = Cr0::read();
+    unsafe { Cr0::write(cr0 & !Cr0Flags::WRITE_PROTECT) };
+
+    let mut page_table = unsafe {
+        OffsetPageTable::new(
+            &mut *(Cr3::read().0.start_address().as_u64() as *mut PageTable),
+            VirtAddr::new(0),
+        )
+    };
+
+    unsafe {
+        map_offset(
+            VirtAddr::new(PHYS_MAP_OFFSET as _),
+            mmap.last()
+                .map(|d| d.phys_start / Size4KiB::SIZE + d.page_count)
+                .unwrap(),
+            &mut page_table,
+            &mut UefiAlloc {},
+            PageTableFlags::empty()
+                | PageTableFlags::GLOBAL
+                | PageTableFlags::WRITABLE
+                | PageTableFlags::PRESENT
+                | PageTableFlags::NO_EXECUTE,
+            PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+        )
+    }
+
+    unsafe { Cr0::write(cr0) };
+
+    let mut page_table = unsafe {
+        OffsetPageTable::new(
+            &mut *(Cr3::read().0.start_address().as_u64() as *mut PageTable),
+            VirtAddr::new(PHYS_MAP_OFFSET as _),
+        )
+    };
+
+    info!("Loading kernel");
+
+    let entry = unsafe { map_kernel(handle.clone(), &mut system_table, &mut page_table) };
+
+    info!("Initializing kernel args struct");
+
+    let fb = unsafe {
+        system_table
+            .boot_services()
+            .locate_protocol::<GraphicsOutput>()
+            .expect_success("Failed to locate graphics output protocol")
+            .get()
+            .as_mut()
+            .unwrap()
+            .frame_buffer()
+    };
+
+    let mut args = unsafe {
+        &mut *(system_table
+            .boot_services()
+            .allocate_pages(
+                AllocateType::AnyPages,
+                MemoryType::custom(KERNEL_ARGS_MEM_TYPE),
+                (align_up(size_of::<KernelArgs>() as u64, Size4KiB::SIZE) / Size4KiB::SIZE)
+                    as usize,
+            )
+            .expect_success("Could not allocate kernel args") as usize
+            as *mut MaybeUninit<KernelArgs>)
+    };
+
+    let args_ptr = args.as_mut_ptr();
+
+    unsafe {
+        addr_of_mut!((*args_ptr).mmap).write(mmap);
+        addr_of_mut!((*args_ptr).fb).write(fb);
+    }
+
+    match page_table.translate(VirtAddr::new(entry as u64)) {
+        TranslateResult::Mapped { flags, .. } => {
+            if flags.contains(PageTableFlags::NO_EXECUTE) {
+                panic!("Kernel entry point non-executable {:?}", flags)
             }
+            info!("Flags: {:?}", flags);
+
+            info!("Exiting boot services and calling kernel entry point");
+
+            let (uefi_rst, _) = system_table
+                .exit_boot_services(handle, &mut mmap_buf)
+                .expect_success("Failed to exit UEFI boot services");
+
+            unsafe {
+                addr_of_mut!((*args_ptr).uefi_rst).write(uefi_rst);
+            }
+
+            unsafe { (entry)(args.assume_init_mut() as _) }
         }
-        final_mmap.push(*md);
+        e => panic!("Kernel entry point inaccessible: {:?}", e),
     }
-
-    if final_mmap.len() > KERNEL_ARGS_MDL_SIZE {
-        panic!(&format!(
-            "Memory map of len {} does not fit into len {}",
-            final_mmap.len(),
-            KERNEL_ARGS_MDL_SIZE
-        ))
-    }
-
-    for i in args.mmap.iter_mut() {
-        *i = MemoryDescriptor::default();
-    }
-
-    for (i, md) in final_mmap.iter().enumerate() {
-        info!("{:?}", md);
-        args.mmap[i] = *md;
-    }
-
-    info!(
-        "Exiting boot services and calling kernel entry point at {:?}",
-        entry
-    );
-
-    let (rt, _) = system_table
-        .exit_boot_services(handle, &mut mmap_buf)
-        .expect_success("Failed to exit UEFI boot services");
-
-    args.uefi_rst = rt;
-
-    (entry)(args as _);
 }

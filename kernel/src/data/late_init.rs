@@ -1,9 +1,10 @@
-use core::mem::MaybeUninit;
-use core::ops::{Deref, DerefMut};
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::{
+    mem::MaybeUninit,
+    ops::{Deref, DerefMut},
+};
 
 pub struct LateInit<T> {
-    init: AtomicBool,
+    init: bool,
     data: MaybeUninit<T>,
 }
 
@@ -11,7 +12,7 @@ impl<T> LateInit<T> {
     /// Create a new, uninitialized LateInit
     pub const fn new() -> Self {
         LateInit {
-            init: AtomicBool::new(false),
+            init: false,
             data: MaybeUninit::uninit(),
         }
     }
@@ -20,11 +21,7 @@ impl<T> LateInit<T> {
     pub unsafe fn init(&self, data: T) -> bool {
         let mut_ref = &mut *(self as *const _ as *mut Self);
 
-        if mut_ref
-            .init
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_err()
-        {
+        if mut_ref.init {
             false
         } else {
             mut_ref.data.write(data);
@@ -37,10 +34,13 @@ impl<T> Deref for LateInit<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        assert!(
-            self.init.load(Ordering::SeqCst),
-            "LateInit dereferenced but uninitialized"
-        );
+        assert!(self.init, "LateInit dereferenced but uninitialized");
         unsafe { self.data.assume_init_ref() }
+    }
+}
+
+impl<T> DerefMut for LateInit<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { self.data.assume_init_mut() }
     }
 }

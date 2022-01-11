@@ -1,6 +1,8 @@
-use core::mem::MaybeUninit;
-use core::ptr::{null_mut, NonNull};
-use core::slice::Iter;
+use core::{
+    mem::{size_of, MaybeUninit},
+    ptr::NonNull,
+};
+use log::info;
 
 /// When a movable head is needed
 pub struct CDLListHead {
@@ -168,6 +170,34 @@ impl CDLListNode {
     //     ListIterator::new(unsafe { NonNull::new_unchecked(self as _) })
     // }
 }
+
+pub struct SLListNode {
+    pub next: Option<NonNull<Self>>,
+}
+
+impl SLListNode {
+    #[inline]
+    pub unsafe fn push(&mut self, mem: NonNull<u8>) {
+        let mut item = mem.cast::<SLListNode>().as_mut();
+        item.next = self.next;
+        self.next = Some(mem.cast());
+    }
+
+    #[inline]
+    pub fn pop(&mut self) -> Option<NonNull<u8>> {
+        if let Some(mut new) = self.next {
+            unsafe {
+                self.next = new.as_mut().next;
+                info!("Popped {:?}", self.next);
+                new.as_ptr().write_bytes(0, size_of::<Self>())
+            }
+            Some(new.cast())
+        } else {
+            None
+        }
+    }
+}
+
 //
 // pub struct ListIterator {
 //     curr: Option<NonNull<DCListNode>>,

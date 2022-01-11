@@ -1,10 +1,9 @@
-use crate::arch::{PhysAddr, PAGE_SIZE};
-use crate::mm::alloc::Locked;
-use crate::mm::PageFrameRange;
 use alloc::boxed::Box;
-use core::alloc::{AllocError, Allocator, Layout};
-use core::mem::{align_of, size_of, transmute};
-use core::ptr::{slice_from_raw_parts_mut, NonNull};
+use core::{
+    alloc::Layout,
+    mem::{align_of, size_of},
+    ptr::{slice_from_raw_parts_mut, NonNull},
+};
 
 /// This very basic allocator is needed for bootstrapping paging and another better allocator
 pub struct BumpAlloc {

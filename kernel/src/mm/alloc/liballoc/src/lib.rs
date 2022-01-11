@@ -9,9 +9,11 @@ mod bindings;
 extern crate alloc;
 
 use alloc::string::String;
-use core::alloc::{GlobalAlloc, Layout};
-use core::ptr::NonNull;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::{
+    alloc::{GlobalAlloc, Layout},
+    ptr::NonNull,
+    sync::atomic::{AtomicBool, Ordering},
+};
 use cty::*;
 use log::debug;
 use printf_compat::{format, output};
@@ -23,7 +25,6 @@ pub type FnFreePages = fn(NonNull<u8>, i32) -> bool;
 
 static GLOBAL_LIB_ALLOC_INIT: AtomicBool = AtomicBool::new(false);
 static mut GLOBAL_LIB_ALLOC: Option<LibAllocAllocatorData> = None;
-static GLOBAL_LIB_ALLOC_LOCK: AtomicBool = AtomicBool::new(false);
 
 struct LibAllocAllocatorData {
     lock: FnLock,

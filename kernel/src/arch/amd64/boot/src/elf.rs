@@ -1,68 +1,60 @@
 use crate::UefiAlloc;
 use alloc::vec::Vec;
 use boot_lib::*;
-use core::mem::transmute;
-use core::panic;
-use goblin::elf::Elf;
-use log::{debug, info, warn};
-use uefi::table::boot::{AllocateType, MemoryAttribute, MemoryDescriptor, MemoryType};
-use uefi::table::cfg::MEMORY_TYPE_INFORMATION_GUID;
-use uefi::table::{Boot, SystemTable};
-use uefi::ResultExt;
-use x86_64::structures::paging::{
-    FrameAllocator, Mapper, Page, PageTable, PageTableFlags, PhysFrame, Size4KiB,
+use core::{mem::transmute, panic};
+use elf_rs::{Elf64, ElfFile, ProgramHeaderFlags};
+use log::{debug, info};
+use uefi::{
+    table::{
+        boot::{AllocateType, MemoryAttribute, MemoryDescriptor, MemoryType},
+        Boot, SystemTable,
+    },
+    ResultExt,
 };
-use x86_64::{PhysAddr, VirtAddr};
+use x86_64::{
+    structures::paging::{Mapper, Page, PageSize, PageTableFlags, PhysFrame, Size4KiB},
+    PhysAddr, VirtAddr,
+};
 
-fn count_pages_needed(size: usize) -> usize {
-    let rem = size % 0x1000;
+fn count_pages_needed(size: u64) -> u64 {
+    let rem = size % Size4KiB::SIZE;
     if rem == 0 {
-        size / 0x1000
+        size / Size4KiB::SIZE
     } else {
-        ((size - rem) / 0x1000) + 1
+        ((size - rem) / Size4KiB::SIZE) + 1
     }
 }
 
-/// This function can only be called with Boot Services enabled
-pub fn map_elf<M>(
-    raw: &[u8],
-    mapper: &mut M,
-    st: &mut SystemTable<Boot>,
-) -> (KernelEntryPoint, Vec<MemoryDescriptor>)
+pub fn map_elf<M>(raw: &[u8], mapper: &mut M, st: &mut SystemTable<Boot>) -> KernelEntryPoint
 where
     M: Mapper<Size4KiB>,
 {
-    let mut mdl = Vec::new();
-    match Elf::parse(raw) {
+    info!("Kernel size: {}", raw.len());
+    match Elf64::from_bytes(raw) {
         Ok(elf) => {
-            if !elf.is_64 {
-                panic!("Kernel image is 32-bit")
-            }
-
             let mut alloc = UefiAlloc {};
 
-            for ph in elf.program_headers {
-                match ph.p_type {
-                    goblin::elf::program_header::PT_LOAD => {
+            for ph in elf.program_header_iter() {
+                match ph.ph_type() {
+                    elf_rs::ProgramType::LOAD => {
                         debug!("Loading a program header --> {:?}", ph);
-                        let pages = count_pages_needed(ph.p_memsz as usize) as u64;
+                        let pages = count_pages_needed(ph.memsz());
 
                         debug!("Allocating {} pages", pages);
 
                         let mut mem_ty = KERNEL_RO_MEM_TYPE;
 
                         let mut page_flags = PageTableFlags::empty()
-                            | PageTableFlags::WRITABLE
-                            | PageTableFlags::GLOBAL
-                            | PageTableFlags::PRESENT;
+                            | PageTableFlags::PRESENT
+                            | PageTableFlags::WRITABLE;
 
-                        if (ph.p_flags & 1) == 0 {
-                            page_flags |= PageTableFlags::NO_EXECUTE;
-                        } else {
-                            mem_ty = KERNEL_RX_MEM_TYPE;
-                        }
+                        // if !ph.flags().contains(ProgramHeaderFlags::EXECUTE) {
+                        //     page_flags |= PageTableFlags::NO_EXECUTE;
+                        // } else {
+                        //     mem_ty = KERNEL_RX_MEM_TYPE;
+                        // }
 
-                        if (ph.p_flags & 2) << 1 == 1 {
+                        if ph.flags().contains(ProgramHeaderFlags::WRITE) {
                             page_flags |= PageTableFlags::WRITABLE;
                             if mem_ty == KERNEL_RX_MEM_TYPE {
                                 mem_ty = KERNEL_RWX_MEM_TYPE
@@ -81,40 +73,32 @@ where
                             .expect_success("Failed to allocate pages for loading the kernel")
                             as *mut u8;
 
-                        let mut tmp = MemoryDescriptor::default();
-                        tmp.ty = MemoryType::custom(mem_ty);
-                        tmp.phys_start = pages_addr as _;
-                        tmp.virt_start = ph.p_vaddr;
-                        tmp.page_count = pages;
-                        tmp.att = MemoryAttribute::RUNTIME;
-
-                        mdl.push(tmp);
-
                         debug!("Zeroing allocated pages");
                         unsafe {
-                            pages_addr.write_bytes(0, ph.p_memsz as usize);
+                            pages_addr.write_bytes(0, ph.memsz() as usize);
                         }
                         debug!("Copying the header");
                         let raw_ptr = raw.as_ptr();
                         unsafe {
                             raw_ptr
-                                .offset(ph.p_offset as isize)
-                                .copy_to_nonoverlapping(pages_addr, ph.p_filesz as usize)
+                                .offset(ph.offset() as isize)
+                                .copy_to_nonoverlapping(pages_addr, ph.filesz() as usize)
                         }
 
                         for i in 0..pages {
                             unsafe {
-                                let vaddr = VirtAddr::new(ph.p_vaddr + i * 0x1000);
-                                let paddr =
-                                    PhysAddr::new(pages_addr.offset((i * 0x1000) as isize) as u64);
-                                info!("Mapping kernel page {:?} to {:?}", vaddr, paddr);
+                                let vaddr = VirtAddr::new(ph.vaddr() + i * Size4KiB::SIZE);
+                                let paddr = PhysAddr::new(
+                                    pages_addr.offset((i * Size4KiB::SIZE) as isize) as u64,
+                                );
                                 mapper
-                                    .map_to(
+                                    .map_to_with_table_flags(
                                         Page::from_start_address(vaddr)
                                             .expect("Allocated page not aligned"),
                                         PhysFrame::from_start_address(paddr)
                                             .expect("Allocated page not aligned"),
                                         page_flags,
+                                        PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
                                         &mut alloc,
                                     )
                                     .unwrap()
@@ -122,18 +106,13 @@ where
                             }
                         }
                     }
-                    goblin::elf::program_header::PT_GNU_STACK => {
-                        if (ph.p_flags & 1) != 0 {
-                            warn!("Executable stack detected");
-                        }
-                    }
                     _ => {}
                 }
             }
 
-            info!("Kernel entry point at {:#x}", elf.entry);
-            unsafe { (transmute(elf.entry), mdl) }
+            info!("Kernel entry point at {:#x}", elf.entry_point());
+            unsafe { transmute(elf.entry_point() as *const ()) }
         }
-        Err(e) => panic!("Kernel image is not a valid ELF file"),
+        Err(e) => panic!("Kernel image is not a valid ELF file: {:?}", e),
     }
 }
