@@ -4,8 +4,9 @@ use crate::{
         setup::{BootMemAllocator, BumpAlloc},
         virt::{VAllocFlags, GLOBAL_VM_ALLOC},
     },
-    sync::irq_lock::{IRQSpinlock, InterruptGuard},
+    sync::irq_lock::InterruptGuard,
 };
+use alloc::vec;
 use core::alloc::{GlobalAlloc, Layout};
 use liballoc::LiballocAllocator;
 use spin::mutex::{SpinMutex, SpinMutexGuard};
@@ -59,6 +60,7 @@ pub struct GlobalAllocator(Global<AllocState>);
 static GLOBAL_LIB_ALLOC_LOCK: SpinMutex<()> = SpinMutex::new(());
 
 pub unsafe fn init_liballoc() {
+    // TODO AllocType
     liballoc::init(
         || {
             SpinMutexGuard::leak(GLOBAL_LIB_ALLOC_LOCK.lock());
@@ -71,7 +73,11 @@ pub unsafe fn init_liballoc() {
         move |count| {
             GLOBAL_VM_ALLOC
                 .lock()
-                .alloc(count as _, VAllocFlags::COMMIT, PageTableFlags::NO_EXECUTE)
+                .alloc(
+                    count as _,
+                    VAllocFlags::COMMIT,
+                    PageTableFlags::WRITABLE | PageTableFlags::PRESENT,
+                )
                 .map(|x| x.start.pointer())
         },
         |ptr, count| {
@@ -81,6 +87,8 @@ pub unsafe fn init_liballoc() {
             true
         },
     );
+    // test
+    let _ = vec![0u32; 100];
 }
 
 unsafe impl GlobalAlloc for IRQLocked<GlobalAllocator> {

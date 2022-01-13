@@ -1,7 +1,7 @@
 use crate::UefiAlloc;
 use alloc::vec::Vec;
 use boot_lib::*;
-use core::{mem::transmute, panic};
+use core::{mem::transmute, ops::DerefMut, panic};
 use elf_rs::{Elf64, ElfFile, ProgramHeaderFlags};
 use log::{debug, info};
 use uefi::{

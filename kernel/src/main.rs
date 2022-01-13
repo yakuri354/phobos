@@ -4,7 +4,7 @@
 #![feature(abi_efiapi)]
 #![feature(asm_const)]
 #![feature(abi_x86_interrupt)]
-#![feature(naked_functions)]
+#![feature(exclusive_range_pattern)]
 #![no_std]
 #![no_main]
 
@@ -18,10 +18,14 @@ use log::info;
 #[macro_use]
 mod diag;
 mod arch;
+mod aux;
 mod data;
 mod graphics;
 mod mm;
+mod io;
 mod sync;
+mod fs;
+mod device;
 
 pub fn kernel_main() -> ! {
     info!("Starting main kernel loop");

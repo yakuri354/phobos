@@ -55,7 +55,6 @@ where
 {
     let mut g_all = GLOBAL_PHYS_ALLOC.lock();
     for i in mmap {
-        info!("Adding range {:#x} -- {:#x} of type {:?}", i.phys_start, i.phys_start + i.page_count * Size4KiB::SIZE, i.ty);
         match i.ty {
             MemoryType::CONVENTIONAL
             | MemoryType::BOOT_SERVICES_CODE
@@ -84,10 +83,6 @@ unsafe impl FrameAllocator<Size4KiB> for GlobalFrameAllocator {
         GLOBAL_PHYS_ALLOC
             .lock()
             .get_clean()
-            .map(|p| {
-                info!("Got a frame: {:?}", p);
-                p
-            })
             .map(PhysFrame::from_pointer)
     }
 }

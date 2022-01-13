@@ -17,6 +17,7 @@ use crate::{
 use bitflags::bitflags;
 use boot_lib::PHYS_MAP_OFFSET;
 use core::{cmp::Ordering, ops::Add, ptr::NonNull};
+use log::info;
 use memrange::Range;
 use theban_interval_tree::IntervalTree;
 use x86_64::{
@@ -223,8 +224,14 @@ impl SimpleVaSpace {
     }
 
     pub unsafe fn free_range(&mut self, range: PageRange) {
+        let pt = get_pt();
         for page in range {
-            GLOBAL_PHYS_ALLOC.lock().dirty.push(page.pointer())
+            GLOBAL_PHYS_ALLOC.lock().dirty.push(
+                pt.translate_page(page)
+                    .expect("Bad virtual address freed")
+                    .start_address()
+                    .pointer(),
+            )
         }
     }
 }

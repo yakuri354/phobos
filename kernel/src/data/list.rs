@@ -1,6 +1,7 @@
 use core::{
+    hash::Hasher,
     mem::{size_of, MaybeUninit},
-    ptr::NonNull,
+    ptr::{addr_of_mut, NonNull},
 };
 use log::info;
 
@@ -178,8 +179,9 @@ pub struct SLListNode {
 impl SLListNode {
     #[inline]
     pub unsafe fn push(&mut self, mem: NonNull<u8>) {
-        let mut item = mem.cast::<SLListNode>().as_mut();
-        item.next = self.next;
+        let mut item = mem.cast::<MaybeUninit<SLListNode>>().as_mut();
+        let ptr = item.as_mut_ptr();
+        addr_of_mut!((*ptr).next).write(self.next);
         self.next = Some(mem.cast());
     }
 
@@ -188,7 +190,6 @@ impl SLListNode {
         if let Some(mut new) = self.next {
             unsafe {
                 self.next = new.as_mut().next;
-                info!("Popped {:?}", self.next);
                 new.as_ptr().write_bytes(0, size_of::<Self>())
             }
             Some(new.cast())

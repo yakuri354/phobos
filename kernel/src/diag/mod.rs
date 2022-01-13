@@ -1,14 +1,9 @@
-use crate::arch::debug::*;
+use crate::{arch::debug::*, diag::logger::FB_LOGGER};
+use log::LevelFilter;
 
+pub mod logger;
 pub mod panic;
 
-#[macro_export]
-macro_rules! bug_reached {
-    () => {
-        ::core::panic!(::core::format_args!("BUG detected on {}:{}; Statement should not be reachable"), ::core::file!(). ::core::line!())
-    }
-}
-
 pub fn init() {
-    init_debug_logger().unwrap()
+    log::set_logger(&FB_LOGGER).map(|()| log::set_max_level(LevelFilter::Debug));
 }

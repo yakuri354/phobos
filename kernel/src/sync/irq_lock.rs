@@ -8,14 +8,14 @@ use spin::{Mutex, MutexGuard};
 
 // We don't need a real spinlock since the kernel does not support SMP yet
 
-pub struct IRQSpinlock<T> {
+pub struct IRQLocked<T> {
     // inner: Mutex<T>,
     val: T,
 }
 
-impl<T> IRQSpinlock<T> {
-    pub const fn new(val: T) -> IRQSpinlock<T> {
-        IRQSpinlock {
+impl<T> IRQLocked<T> {
+    pub const fn new(val: T) -> IRQLocked<T> {
+        IRQLocked {
             // inner: Mutex::new(val),
             val,
         }
@@ -31,7 +31,7 @@ impl<T> IRQSpinlock<T> {
     }
 }
 
-unsafe impl<T> Sync for IRQSpinlock<T> {}
+unsafe impl<T> Sync for IRQLocked<T> {}
 
 pub struct InterruptGuard<'a, T> {
     // inner: MutexGuard<'a, T>,
@@ -67,21 +67,5 @@ impl<'a, T> Deref for InterruptGuard<'a, T> {
 impl<'a, T> DerefMut for InterruptGuard<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.val
-    }
-}
-
-pub struct IRQLocked<T> {
-    inner: IRQSpinlock<T>,
-}
-
-impl<T> IRQLocked<T> {
-    pub const fn new(data: T) -> Self {
-        Self {
-            inner: IRQSpinlock::new(data),
-        }
-    }
-
-    pub fn lock(&self) -> InterruptGuard<T> {
-        self.inner.lock()
     }
 }

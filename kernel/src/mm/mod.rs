@@ -17,6 +17,7 @@ use x86_64::{
 
 pub mod alloc;
 mod aux;
+pub mod mapping;
 
 pub const SYSTEM_MEMORY_MAP: IRQLocked<LateInit<&'static mut ArrayVec<MemoryDescriptor, 512>>> =
     IRQLocked::new(LateInit::new());

@@ -1,11 +1,11 @@
 use crate::{data::late_init::LateInit, sync::irq_lock::IRQLocked};
 use boot_lib::PHYS_MAP_OFFSET;
-use core::slice::from_raw_parts;
+use core::{cmp::min, slice::from_raw_parts};
 use lazy_static::lazy_static;
-use core::cmp::min;
 use log::{error, info};
 use x86_64::{
-    instructions::tables::{lidt, sgdt, sidt},
+    instructions::tables::{lgdt, lidt, sgdt, sidt},
+    registers::control::{Cr0, Cr2},
     structures::{
         gdt::GlobalDescriptorTable,
         idt::{
@@ -14,7 +14,6 @@ use x86_64::{
         },
     },
 };
-use x86_64::instructions::tables::lgdt;
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
@@ -30,7 +29,7 @@ lazy_static! {
     };
 }
 
-pub fn init() {
+pub fn init_basic_ex_handling() {
     let mut gdt = sgdt();
     gdt.base += PHYS_MAP_OFFSET;
     unsafe { lgdt(&gdt) }
@@ -41,6 +40,7 @@ extern "x86-interrupt" fn page_fault(frame: InterruptStackFrame, code: PageFault
     error!("Page fault occured");
     error!("{:#?}", frame);
     error!("Code: {:?}", code);
+    error!("CR2: {:#x}", Cr2::read().as_u64());
     panic!("Page Fault!")
 }
 
@@ -53,4 +53,10 @@ extern "x86-interrupt" fn double_fault(frame: InterruptStackFrame, _code: u64) -
 extern "x86-interrupt" fn breakpoint(frame: InterruptStackFrame) {
     info!("Waiting for debugger");
     loop {}
+}
+
+extern "x86-interrupt" fn general_protection_fault(frame: InterruptStackFrame) {
+    info!("General Protection Fault");
+    info!("{:#?}", frame);
+    panic!("GPF");
 }
