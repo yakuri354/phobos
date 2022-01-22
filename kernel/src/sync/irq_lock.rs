@@ -1,41 +1,52 @@
-use crate::{arch::interrupt::*, mm::alloc::GlobalAllocator};
+use crate::arch::interrupt::*;
 use core::{
-    alloc::{GlobalAlloc, Layout},
+    cell::UnsafeCell,
     ops::{Deref, DerefMut},
+    sync::atomic::{AtomicBool, Ordering},
 };
-use liballoc::LiballocAllocator;
-use spin::{Mutex, MutexGuard};
-
+use log::info;
 // We don't need a real spinlock since the kernel does not support SMP yet
 
 pub struct IRQLocked<T> {
     // inner: Mutex<T>,
-    val: T,
+    locked: AtomicBool,
+    val: UnsafeCell<T>,
 }
 
 impl<T> IRQLocked<T> {
     pub const fn new(val: T) -> IRQLocked<T> {
         IRQLocked {
             // inner: Mutex::new(val),
-            val,
+            locked: AtomicBool::new(false),
+            val: UnsafeCell::new(val),
         }
     }
     pub fn lock(&self) -> InterruptGuard<T> {
         // let guard = self.inner.lock();
+        if self
+            .locked
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            panic!("IRQLocked locked twice");
+        }
         let flag = are_enabled();
         disable();
-        unsafe { InterruptGuard::new(&mut *(&self.val as *const _ as *mut _), flag) }
+        unsafe { InterruptGuard::new(unsafe { &mut *self.val.get() }, flag, &self.locked) }
     }
+
     pub fn is_locked(&self) -> bool {
-        false
+        self.locked.load(Ordering::SeqCst)
     }
 }
 
 unsafe impl<T> Sync for IRQLocked<T> {}
+unsafe impl<T> Send for IRQLocked<T> {}
 
 pub struct InterruptGuard<'a, T> {
     // inner: MutexGuard<'a, T>,
     val: &'a mut T,
+    locked: &'a AtomicBool,
     int_flag: bool,
 }
 
@@ -43,8 +54,12 @@ impl<'a, T> InterruptGuard<'a, T> {
     // fn new(inner: MutexGuard<'a, T>, int_flag: bool) -> Self {
     //     InterruptGuard { inner, int_flag }
     // }
-    fn new(val: &'a mut T, int_flag: bool) -> Self {
-        InterruptGuard { val, int_flag }
+    fn new(val: &'a mut T, int_flag: bool, locked: &'a AtomicBool) -> Self {
+        InterruptGuard {
+            val,
+            int_flag,
+            locked,
+        }
     }
 }
 
@@ -53,6 +68,7 @@ impl<'a, T> Drop for InterruptGuard<'a, T> {
         if self.int_flag {
             enable()
         }
+        self.locked.store(false, Ordering::Release);
     }
 }
 

@@ -1,20 +1,19 @@
 use crate::{
     arch::{
-        mem::{PAGE_OFFSET_MASK, PAGE_SHIFT},
         PAGE_SIZE,
     },
     data::{
-        list::{CDLListHead, SLListNode},
+        list::{SLListNode},
         misc::Pointable,
     },
     sync::irq_lock::IRQLocked,
 };
 use boot_lib::PHYS_MAP_OFFSET;
 use core::ptr::NonNull;
-use log::info;
+
 use uefi::table::boot::{MemoryDescriptor, MemoryType};
 use x86_64::structures::paging::{
-    frame::PhysFrameRange, FrameAllocator, PageSize, PhysFrame, Size4KiB,
+    FrameAllocator, PageSize, PhysFrame, Size4KiB,
 };
 
 pub static GLOBAL_PHYS_ALLOC: IRQLocked<LinkedListAllocator> =
@@ -45,7 +44,7 @@ impl LinkedListAllocator {
             }
             return Some(dirty);
         }
-        return None;
+        None
     }
 }
 

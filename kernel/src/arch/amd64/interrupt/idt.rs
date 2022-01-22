@@ -1,18 +1,12 @@
-use crate::{data::late_init::LateInit, sync::irq_lock::IRQLocked};
 use boot_lib::PHYS_MAP_OFFSET;
-use core::{cmp::min, slice::from_raw_parts};
+use core::arch::asm;
+
 use lazy_static::lazy_static;
 use log::{error, info};
 use x86_64::{
-    instructions::tables::{lgdt, lidt, sgdt, sidt},
-    registers::control::{Cr0, Cr2},
-    structures::{
-        gdt::GlobalDescriptorTable,
-        idt::{
-            HandlerFunc, InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode,
-            PageFaultHandlerFunc,
-        },
-    },
+    instructions::tables::{lgdt, sgdt, sidt},
+    registers::control::Cr2,
+    structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
 };
 
 lazy_static! {
@@ -24,6 +18,8 @@ lazy_static! {
         idt.page_fault.set_handler_fn(page_fault);
         idt.double_fault.set_handler_fn(double_fault);
         idt.breakpoint.set_handler_fn(breakpoint);
+        idt.general_protection_fault
+            .set_handler_fn(general_protection_fault);
 
         idt
     };
@@ -50,13 +46,15 @@ extern "x86-interrupt" fn double_fault(frame: InterruptStackFrame, _code: u64) -
     panic!("Double Fault!")
 }
 
-extern "x86-interrupt" fn breakpoint(frame: InterruptStackFrame) {
+extern "x86-interrupt" fn breakpoint(_frame: InterruptStackFrame) {
     info!("Waiting for debugger");
-    loop {}
+    unsafe {
+        asm!("2: jmp 2b");
+    }
 }
 
-extern "x86-interrupt" fn general_protection_fault(frame: InterruptStackFrame) {
-    info!("General Protection Fault");
+extern "x86-interrupt" fn general_protection_fault(frame: InterruptStackFrame, flag: u64) {
+    info!("General Protection Fault: {:#x}", flag);
     info!("{:#?}", frame);
     panic!("GPF");
 }

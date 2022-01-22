@@ -1,10 +1,9 @@
 use crate::{
-    data::{late_init::LateInit, misc::Pointable},
+    data::{misc::Pointable},
     mm::alloc::{
-        setup::{BootMemAllocator, BumpAlloc},
+        setup::{BumpAlloc},
         virt::{VAllocFlags, GLOBAL_VM_ALLOC},
     },
-    sync::irq_lock::InterruptGuard,
 };
 use alloc::vec;
 use core::alloc::{GlobalAlloc, Layout};

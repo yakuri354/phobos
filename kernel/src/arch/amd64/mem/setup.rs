@@ -1,58 +1,26 @@
 use boot_lib::*;
-use core::{
-    mem::{replace, size_of, swap, take, MaybeUninit},
-    ops::{Deref, DerefMut},
-};
-use embedded_graphics::geometry::Dimensions;
-use log::{debug, info};
-use uefi::table::boot::{MemoryAttribute, MemoryDescriptor, MemoryType};
-use x86_64::{
-    structures::paging::{
-        page::PageRange, Page, PageTable, PageTableFlags, PageTableIndex, PhysFrame, Size4KiB,
-    },
-    PhysAddr, VirtAddr,
-};
 
-use super::PAGE_SIZE;
-use crate::mm::alloc::setup::{BootMemAllocator, BumpAlloc};
-use arrayvec::ArrayVec;
-use core::{
-    alloc::Layout,
-    arch::asm,
-    convert::TryFrom,
-    ptr::{addr_of, null, null_mut, NonNull},
-};
-use uefi::{
-    table::{Runtime, SystemTable},
-    ResultExt,
+use log::info;
+
+use x86_64::{
+    structures::paging::{page::PageRange, Page, PhysFrame, Size4KiB},
+    VirtAddr,
 };
 
 use crate::{
-    arch::{fb, interrupt, mem::get_pt},
-    graphics::fb::{FbDisplay, GLOBAL_FB},
+    arch::mem::get_pt,
     mm::{
-        alloc::{
-            init_liballoc,
-            phys::init_phys_alloc_from_mmap,
-            virt::{alloc_and_map_at, alloc_and_map_at_range, KERNEL_MAP_OFFSET},
-        },
+        alloc::{init_liballoc, phys::init_phys_alloc_from_mmap, virt::KERNEL_MAP_OFFSET},
         mapping::unmap_range,
-        SYSTEM_MEMORY_MAP,
     },
 };
-use boot_lib::PHYS_MAP_OFFSET;
-use x86_64::{
-    instructions::{interrupts::int3, tlb::flush_all},
-    registers::control::Cr3,
-    structures::paging::{
-        mapper::CleanUp, page::PageRangeInclusive, FrameDeallocator, Mapper, PageSize,
-    },
-};
+
+use x86_64::structures::paging::{mapper::CleanUp, page::PageRangeInclusive, FrameDeallocator};
 
 struct DummyFrameDeallocator();
 
 impl FrameDeallocator<Size4KiB> for DummyFrameDeallocator {
-    unsafe fn deallocate_frame(&mut self, frame: PhysFrame<Size4KiB>) {}
+    unsafe fn deallocate_frame(&mut self, _frame: PhysFrame<Size4KiB>) {}
 }
 
 pub unsafe fn init(args: &mut KernelArgs) {

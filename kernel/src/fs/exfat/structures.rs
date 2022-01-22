@@ -1,5 +1,5 @@
-use core::mem::size_of;
 use bitflags::bitflags;
+use core::mem::size_of;
 use static_assertions::const_assert;
 bitflags! {
     pub struct VolumeFlags: u16 {
@@ -32,7 +32,7 @@ pub struct BootSector {
     percent_in_use: u8,
     _reserved: [u8; 7],
     boot_code: [u8; 390],
-    boot_signature: u16
+    boot_signature: u16,
 }
 
 const_assert!(size_of::<BootSector>() == 512);

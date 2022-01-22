@@ -2,7 +2,6 @@ use core::{
     mem::MaybeUninit,
     ops::{Deref, DerefMut},
 };
-use log::info;
 
 pub struct LateInit<T> {
     init: bool,

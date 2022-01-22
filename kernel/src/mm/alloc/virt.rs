@@ -1,30 +1,21 @@
 //! The virtual memory manager is responsible for managing pages, etc.
 
 use crate::{
-    arch::{mem::get_pt, PAGE_SIZE},
+    arch::mem::get_pt,
     data::misc::Pointable,
-    mm::{
-        alloc::{
-            phys::{clear_page, GlobalFrameAllocator, GLOBAL_PHYS_ALLOC},
-            stack::StackAllocator,
-            virt::VAllocError::CannotCommit,
-            SinglePageAllocator,
-        },
-        aux::_1_GiB_PAGE,
-    },
+    mm::alloc::phys::{GlobalFrameAllocator, GLOBAL_PHYS_ALLOC},
     sync::irq_lock::IRQLocked,
 };
 use bitflags::bitflags;
 use boot_lib::PHYS_MAP_OFFSET;
-use core::{cmp::Ordering, ops::Add, ptr::NonNull};
-use log::info;
+use core::ptr::NonNull;
+
 use memrange::Range;
 use theban_interval_tree::IntervalTree;
 use x86_64::{
     align_down, align_up,
     structures::paging::{
-        page::{PageRange, PageRangeInclusive},
-        Mapper, Page, PageSize, PageTableFlags, PhysFrame, Size1GiB, Size4KiB,
+        page::PageRange, Mapper, Page, PageSize, PageTableFlags, PhysFrame, Size4KiB,
     },
     PhysAddr, VirtAddr,
 };
@@ -147,7 +138,12 @@ pub fn alloc_and_map_at_range(range: PageRange, flags: PageTableFlags) {
 pub fn alloc_and_map_at(virt: VirtAddr, pages: u64, flags: PageTableFlags) {
     assert!(virt.is_aligned(Size4KiB::SIZE));
     for page in 0..pages {
-        if let Some(frame) = GLOBAL_PHYS_ALLOC.lock().get_clean() {
+        if let Some(frame) = {
+            let mut alloc = GLOBAL_PHYS_ALLOC.lock();
+            let res = alloc.get_clean();
+            drop(alloc);
+            res
+        } {
             unsafe {
                 get_pt()
                     .map_to_with_table_flags(
@@ -159,7 +155,6 @@ pub fn alloc_and_map_at(virt: VirtAddr, pages: u64, flags: PageTableFlags) {
                         PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
                         &mut GlobalFrameAllocator,
                     )
-                    .ok()
                     .expect("Mapping failed")
                     .flush()
             };

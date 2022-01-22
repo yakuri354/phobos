@@ -3,7 +3,7 @@ use core::{
     mem::{size_of, MaybeUninit},
     ptr::{addr_of_mut, NonNull},
 };
-use log::info;
+
 
 /// When a movable head is needed
 pub struct CDLListHead {
@@ -179,7 +179,7 @@ pub struct SLListNode {
 impl SLListNode {
     #[inline]
     pub unsafe fn push(&mut self, mem: NonNull<u8>) {
-        let mut item = mem.cast::<MaybeUninit<SLListNode>>().as_mut();
+        let item = mem.cast::<MaybeUninit<SLListNode>>().as_mut();
         let ptr = item.as_mut_ptr();
         addr_of_mut!((*ptr).next).write(self.next);
         self.next = Some(mem.cast());

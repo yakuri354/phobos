@@ -2,12 +2,9 @@
 #![no_std]
 
 use arrayvec::ArrayVec;
-use core::{
-    fmt::{Debug, Formatter},
-    ptr::NonNull,
-};
+use core::fmt::{Debug, Formatter};
 use uefi::{
-    proto::console::gop::{FrameBuffer, ModeInfo},
+    proto::console::gop::ModeInfo,
     table::{boot::MemoryDescriptor, Runtime, SystemTable},
 };
 

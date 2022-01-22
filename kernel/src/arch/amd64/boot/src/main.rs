@@ -4,46 +4,36 @@
 
 extern crate alloc;
 
-use alloc::{boxed::Box, string::ToString, vec::Vec};
+use alloc::{string::ToString, vec::Vec};
 use arrayvec::ArrayVec;
-use core::mem::{size_of, uninitialized, zeroed, MaybeUninit};
-use uefi_services::system_table;
+use core::mem::{size_of, zeroed, MaybeUninit};
 
-use log::{debug, error, info};
+use log::{error, info};
 use uefi::{
     prelude::*,
     proto::media::file::{File, FileAttribute, FileMode, RegularFile},
     table::boot::{AllocateType, MemoryDescriptor, MemoryType},
-    Completion,
 };
 
 use x86_64::{
     align_up,
     registers::control::{Cr0, Cr0Flags, Cr3, Cr4, Efer},
-    structures::paging::{
-        FrameAllocator, PageTable, PageTableFlags, PhysFrame, RecursivePageTable, Size4KiB,
-    },
+    structures::paging::{FrameAllocator, PageTable, PageTableFlags, PhysFrame, Size4KiB},
     PhysAddr, VirtAddr,
 };
 
 use alloc::vec;
 use boot_lib::{
-    KernelArgs, KernelEntryPoint, KERNEL_ARGS_MDL_SIZE, KERNEL_ARGS_MEM_TYPE, KERNEL_STACK_BOTTOM,
-    KERNEL_STACK_MEM_TYPE, KERNEL_STACK_SIZE_PAGES, PHYS_MAP_OFFSET, PTE_MEM_TYPE,
+    KernelArgs, KernelEntryPoint, KERNEL_ARGS_MEM_TYPE, KERNEL_STACK_BOTTOM, KERNEL_STACK_MEM_TYPE,
+    KERNEL_STACK_SIZE_PAGES, PHYS_MAP_OFFSET, PTE_MEM_TYPE,
 };
-use core::{
-    arch::asm,
-    hash::Hasher,
-    iter::FromIterator,
-    ptr::{addr_of_mut, NonNull},
-};
+use core::{arch::asm, iter::FromIterator, ptr::addr_of_mut};
 use uefi::{
     proto::console::gop::{FrameBuffer, GraphicsOutput, Mode, ModeInfo, PixelFormat::Bgr},
     table::Runtime,
 };
 use x86_64::structures::paging::{
     mapper::{MapToError, TranslateResult},
-    page::{PageRange, PageRangeInclusive},
     Mapper, OffsetPageTable, Page, PageSize, Size1GiB, Size2MiB, Translate,
 };
 
@@ -92,7 +82,6 @@ where
                 MapToError::ParentEntryHugePage => error!("ParentEntryHugePage"),
                 MapToError::PageAlreadyMapped(x) => error!("PageAlreadyMapped: {:?}", x),
             })
-            .ok()
             .expect("Mapping failed")
             .flush();
             left -= small_pages;
@@ -114,11 +103,10 @@ unsafe fn map_offset<A: FrameAllocator<Size4KiB>>(
 ) {
     assert!(virt.is_aligned(Size4KiB::SIZE));
     let mut done = 0;
-    if !pages
+    if pages
         .checked_mul(Size4KiB::SIZE)
         .and_then(|x| virt.as_u64().checked_add(x))
-        .map(|x| x <= 0xFFFF_FFFF_FFFF_FFFF)
-        .unwrap_or(false)
+        .is_none()
     {
         panic!("Not enough memory to create mapping")
     }
@@ -183,13 +171,18 @@ unsafe fn map_stack<M>(
         .expect_success("Could not allocate memory for the kernel stack");
 
     for i in 0..size_pages {
-        mapper.map_to_with_table_flags(
-            Page::containing_address(bottom - Size4KiB::SIZE * i),
-            PhysFrame::containing_address(PhysAddr::new(mem + Size4KiB::SIZE * (size_pages - i))),
-            PageTableFlags::PRESENT | PageTableFlags::NO_EXECUTE | PageTableFlags::WRITABLE,
-            PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-            &mut UefiAlloc {},
-        );
+        mapper
+            .map_to_with_table_flags(
+                Page::containing_address(bottom - Size4KiB::SIZE * i),
+                PhysFrame::containing_address(PhysAddr::new(
+                    mem + Size4KiB::SIZE * (size_pages - i),
+                )),
+                PageTableFlags::PRESENT | PageTableFlags::NO_EXECUTE | PageTableFlags::WRITABLE,
+                PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                &mut UefiAlloc {},
+            )
+            .expect("Failed to map kernel stack")
+            .flush();
     }
 }
 
@@ -250,11 +243,11 @@ unsafe fn map_kernel<M: Mapper<Size4KiB>>(
 
     info!("Mapping kernel image into virtual address space");
 
-    elf::map_elf(&mut k_buf, page_table, system_table)
+    elf::map_elf(&k_buf, page_table, system_table)
 }
 
 fn init_fb(system_table: &mut SystemTable<Boot>) -> (FrameBuffer<'static>, ModeInfo) {
-    let mut gop = unsafe {
+    let gop = unsafe {
         system_table
             .boot_services()
             .locate_protocol::<GraphicsOutput>()
@@ -270,11 +263,12 @@ fn init_fb(system_table: &mut SystemTable<Boot>) -> (FrameBuffer<'static>, ModeI
     gop.set_mode(
         &gop.query_mode(0)
             .expect_success("GOP initialization failed"),
-    );
+    )
+    .expect_success("Failed to set default GOP framebuffer mode");
 
     let mut selected_mode = None;
     'out: for i in [(1920, 1080), (1920, 1200), (1280, 720), (640, 480)] {
-        for j in gop.modes() {
+        for j in gop.modes().collect::<Vec<_>>() {
             let mode: Mode = j.expect("Enumerating GOP modes failed");
             let info = mode.info();
             if info.resolution() == i && info.pixel_format() == Bgr {
@@ -283,15 +277,14 @@ fn init_fb(system_table: &mut SystemTable<Boot>) -> (FrameBuffer<'static>, ModeI
                         selected_mode = Some(mode);
                         break 'out;
                     }
-                    Err(_) => continue 'out
+                    Err(_) => continue 'out,
                 }
             }
         }
     }
 
-    match &selected_mode {
-        Some(mode) => gop.set_mode(mode),
-        _ => panic!("No supported GOP modes found"),
+    if selected_mode.is_none() {
+        panic!("No supported GOP modes found");
     };
 
     (gop.frame_buffer(), *selected_mode.unwrap().info())
@@ -331,7 +324,7 @@ fn efi_main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
         .memory_map(&mut mmap_buf)
         .expect_success("Failed to get memory map");
 
-    let mut mmap: ArrayVec<MemoryDescriptor, 512> = ArrayVec::from_iter(mmap_it.map(Clone::clone));
+    let mmap: ArrayVec<MemoryDescriptor, 512> = ArrayVec::from_iter(mmap_it.map(Clone::clone));
 
     info!("Mapping physical memory at offset {:#x}", PHYS_MAP_OFFSET);
 

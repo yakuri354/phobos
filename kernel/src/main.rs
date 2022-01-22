@@ -20,12 +20,12 @@ mod diag;
 mod arch;
 mod aux;
 mod data;
-mod graphics;
-mod mm;
-mod io;
-mod sync;
-mod fs;
 mod device;
+mod fs;
+mod graphics;
+mod io;
+mod mm;
+mod sync;
 
 pub fn kernel_main() -> ! {
     info!("Starting main kernel loop");

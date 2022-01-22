@@ -1,14 +1,12 @@
 use crate::{arch::mem::get_pt, data::misc::Pointable};
-use core::convert::TryFrom;
-use log::info;
+
+
 use x86_64::{
     align_down, align_up,
     instructions::tlb::flush_all,
     structures::paging::{
-        mapper::{FlagUpdateError, MapperFlushAll},
         page::PageRange,
-        page_table::{PageTableEntry, PageTableLevel},
-        Mapper, Page, PageSize, PageTable, PageTableFlags, PageTableIndex, Size1GiB, Size4KiB,
+        page_table::{PageTableLevel}, Page, PageSize, PageTable, Size4KiB,
     },
     VirtAddr,
 };
