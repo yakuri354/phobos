@@ -10,6 +10,7 @@ use crate::{
 };
 use boot_lib::PHYS_MAP_OFFSET;
 use core::ptr::NonNull;
+use log::info;
 
 use uefi::table::boot::{MemoryDescriptor, MemoryType};
 use x86_64::structures::paging::{

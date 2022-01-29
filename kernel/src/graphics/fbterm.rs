@@ -15,35 +15,44 @@ use embedded_graphics_core::{
     pixelcolor::{Bgr888, Gray8, RgbColor},
     prelude::{DrawTarget, IntoStorage, Point, Size},
 };
-use fontdue::{layout::GlyphRasterConfig, Font, FontSettings, Metrics};
+use fontdue::{layout::GlyphRasterConfig, Font, FontSettings, LineMetrics, Metrics};
+use log::info;
 
-const TAB_SIZE: u32 = 4;
-const PADDING_PX: u32 = 3;
+const TAB_SIZE: i64 = 4;
+const PADDING_PX: i64 = 3;
+const CHAR_MARGIN: i64 = 2;
+const FONT_SIZE: i64 = 15;
 
 pub struct FbTextRender {
     font: Font,
-    font_size: u32,
-    current_pos: (u32, u32),
+    font_size: i64,
+    current_pos: (i64, i64),
+    line_metrics: LineMetrics,
     bg: Bgr888,
 }
 
 // TODO Support ANSI control codes
 
 impl FbTextRender {
-    pub fn new<T: Deref<Target = [u8]>>(font_data: T, font_size: u32, bg: Bgr888) -> Self {
-        GLOBAL_FB.lock().fill(bg);
+    pub fn new<T: Deref<Target = [u8]>>(font_data: T, bg: Bgr888) -> Self {
+        let mut fb = GLOBAL_FB.lock();
+        fb.fill(bg);
+        fb.flush();
+        let font = Font::from_bytes(
+            font_data,
+            FontSettings {
+                scale: FONT_SIZE as _,
+                ..Default::default()
+            },
+        )
+        .expect("Failed to parse font");
+        let line_metrics = font.horizontal_line_metrics(FONT_SIZE as _).unwrap();
         Self {
-            font: Font::from_bytes(
-                font_data,
-                FontSettings {
-                    scale: font_size as _,
-                    ..Default::default()
-                },
-            )
-            .expect("Failed to parse font"),
-            font_size,
+            font,
+            font_size: FONT_SIZE,
             current_pos: (PADDING_PX, PADDING_PX),
             bg,
+            line_metrics,
         }
     }
 
@@ -86,41 +95,52 @@ impl FbTextRender {
         Ok(())
     }
 
-    fn alloc_place_for_char(&mut self, fb: &mut FbDisplay, width: u32) {
+    fn alloc_place_for_char(&mut self, fb: &mut FbDisplay, width: i64) {
         let res = fb.mode.resolution();
-        if self.current_pos.0 + width + PADDING_PX >= res.0 as u32 {
+        if self.current_pos.0 + width + PADDING_PX >= res.0 as i64 {
             self.advance_line(fb);
         }
     }
 
     fn advance_line(&mut self, fb: &mut FbDisplay) {
         let res = fb.mode.resolution();
-        let amount = self.current_pos.1 + self.font_size + PADDING_PX - (res.1 as u32) + 1;
-        fb.scroll_up(amount as _, self.bg);
-        self.current_pos.1 = res.1 as u32 - amount;
+        let line_size = self.line_metrics.new_line_size as u32 as i64 + 1;
+        if self.current_pos.1 + line_size >= res.1 as i64 {
+            let amount = self.current_pos.1 + line_size - (res.1 as i64) + 1;
+            fb.scroll_up(amount as _, self.bg);
+            self.current_pos.1 = res.1 as i64 - line_size - 1;
+        } else {
+            self.current_pos.1 += line_size;
+        }
         self.current_pos.0 = PADDING_PX;
     }
 
     fn draw_char(&mut self, ch: char, color: Bgr888) {
-        let (met, bmp) = self.font.rasterize(ch, self.font_size as f32);
-
+        let (met, bmp) = self.font.rasterize(ch, self.font_size as u32 as f32);
         let mut fb = GLOBAL_FB.lock();
-        self.alloc_place_for_char(&mut **fb, met.width as _);
-
+        self.alloc_place_for_char(&mut **fb, met.width as i64 + met.xmin as i64);
         for i in 0..met.height {
             for j in 0..met.width {
                 let stride = fb.mode.stride();
-                let fb_idx =
-                    self.current_pos.0 as usize + j + (self.current_pos.1 as usize + i) * stride;
+                let fb_idx = (self.current_pos.0 + j as i64 + met.xmin as i64) as usize
+                    + (self.current_pos.1
+                        + i as i64
+                        + self.line_metrics.ascent as i32 as i64
+                        + self.line_metrics.line_gap as i32 as i64
+                        - met.ymin as i64
+                        - met.height as i64) as usize
+                        * stride;
                 let bmp_idx = i * met.width + j;
 
-                let new_r = (color.r() * bmp[bmp_idx]) / u8::MAX;
-                let new_g = (color.g() * bmp[bmp_idx]) / u8::MAX;
-                let new_b = (color.b() * bmp[bmp_idx]) / u8::MAX;
+                let new_r = (color.r() as u64 * bmp[bmp_idx] as u64) / u8::MAX as u64;
+                let new_g = (color.g() as u64 * bmp[bmp_idx] as u64) / u8::MAX as u64;
+                let new_b = (color.b() as u64 * bmp[bmp_idx] as u64) / u8::MAX as u64;
 
-                fb.buffer[fb_idx] = Bgr888::new(new_r, new_g, new_b)
+                fb.write(fb_idx, Bgr888::new(new_r as _, new_g as _, new_b as _));
             }
         }
+
+        self.current_pos.0 += met.advance_width as i32 as i64;
     }
 }
 

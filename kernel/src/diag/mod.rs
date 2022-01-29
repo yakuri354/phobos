@@ -1,5 +1,5 @@
 use crate::{
-    diag::logger::{FONT_SIZE, GLOBAL_LOGGER},
+    diag::logger::GLOBAL_LOGGER,
     graphics::{
         fb::{FbDisplay, GLOBAL_FB},
         fbterm::FbTextRender,
@@ -7,6 +7,7 @@ use crate::{
     },
 };
 use core::{ops::DerefMut, ptr::NonNull};
+use core::fmt::Debug;
 use embedded_graphics_core::pixelcolor::{Bgr888, RgbColor};
 use fontdue::{Font, FontSettings};
 use log::LevelFilter;
@@ -30,5 +31,5 @@ pub fn reinit_with_fb(addr: NonNull<u8>, mode: ModeInfo) {
 
     GLOBAL_LOGGER
         .lock()
-        .reinit_with_fbterm(FbTextRender::new(FIRA_CODE, FONT_SIZE, Bgr888::BLACK));
+        .reinit_with_fbterm(FbTextRender::new(FIRA_CODE, Bgr888::BLACK));
 }

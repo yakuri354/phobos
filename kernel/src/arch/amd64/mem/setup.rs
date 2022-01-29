@@ -45,7 +45,7 @@ pub unsafe fn init(args: &mut KernelArgs) {
         &mut (DummyFrameDeallocator()),
     );
 
-    info!("Initializing physical memory allocator");
+     info!("Initializing physical memory allocator");
 
     init_phys_alloc_from_mmap(args.mmap.iter());
 

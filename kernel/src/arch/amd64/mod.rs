@@ -31,6 +31,8 @@ pub unsafe extern "efiapi" fn _start(args: *mut KernelArgs) -> ! {
 
     mem::setup::init(args);
 
+    info!("{:#?}", args.fb_info);
+
     info!("Initializing framebuffer");
 
     reinit_with_fb(NonNull::new(args.fb_addr).unwrap(), args.fb_info);

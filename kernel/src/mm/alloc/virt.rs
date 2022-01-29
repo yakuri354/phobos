@@ -9,7 +9,9 @@ use crate::{
 use bitflags::bitflags;
 use boot_lib::PHYS_MAP_OFFSET;
 use core::ptr::NonNull;
+use log::info;
 
+use crate::mm::mapping::V_ADDR_MASK;
 use memrange::Range;
 use theban_interval_tree::IntervalTree;
 use x86_64::{
@@ -28,8 +30,10 @@ pub const KERNEL_VIRT_SPACE_END: u64 = 0xFFFFFFFFFFFFF000;
 pub const KERNEL_MAP_OFFSET: u64 = 0xFFFFFFE000000000;
 
 // pub const GLOBAL_VM_ALLOC: Locked<KernelVASpace> = Locked::new(KernelVASpace::new());
-pub const GLOBAL_VM_ALLOC: IRQLocked<SimpleVaSpace> =
-    IRQLocked::new(SimpleVaSpace::new(1, KERNEL_MAP_OFFSET / Size4KiB::SIZE));
+pub static GLOBAL_VM_ALLOC: IRQLocked<SimpleVaSpace> = IRQLocked::new(SimpleVaSpace::new(
+    1,
+    (KERNEL_MAP_OFFSET & V_ADDR_MASK) / Size4KiB::SIZE,
+));
 
 enum VAllocError {
     NotEnoughSpace,
@@ -219,14 +223,17 @@ impl SimpleVaSpace {
     }
 
     pub unsafe fn free_range(&mut self, range: PageRange) {
-        let pt = get_pt();
+        let mut pt = get_pt();
         for page in range {
             GLOBAL_PHYS_ALLOC.lock().dirty.push(
                 pt.translate_page(page)
                     .expect("Bad virtual address freed")
                     .start_address()
                     .pointer(),
-            )
+            );
+            if let Ok((_, fl)) = pt.unmap(page) {
+                fl.flush()
+            }
         }
     }
 }

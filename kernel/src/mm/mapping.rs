@@ -11,7 +11,7 @@ use x86_64::{
     VirtAddr,
 };
 
-const V_ADDR_MASK: u64 = 0x0000FFFFFFFFFFFF;
+pub const V_ADDR_MASK: u64 = 0x0000FFFFFFFFFFFF;
 
 fn int_to_ptl(i: u64) -> Option<PageTableLevel> {
     match i {

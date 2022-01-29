@@ -12,7 +12,6 @@ use embedded_graphics_core::pixelcolor::{Bgr888, RgbColor, WebColors};
 use log::{Level, Log, Metadata, Record};
 
 pub static GLOBAL_LOGGER: IRQLocked<DefaultLogger> = IRQLocked::new(DefaultLogger::new());
-pub const FONT_SIZE: u32 = 20;
 
 pub struct DefaultLogger {
     term: Option<FbTextRender>,
@@ -26,14 +25,19 @@ impl Log for IRQLocked<DefaultLogger> {
     }
 
     fn log(&self, record: &Record) {
-        SERIAL1
-            .lock()
-            .write_fmt(format_args!(
-                "[{}] {}\n",
-                record.level().as_str().chars().next().unwrap(),
-                record.args()
-            ))
-            .expect("Could not write log message to serial port");
+        if let Some(mut serial) = SERIAL1.try_lock() {
+            serial
+                .write_fmt(format_args!(
+                    "[{}] {}\n",
+                    record.level().as_str().chars().next().unwrap(),
+                    record.args()
+                ))
+                .expect("Could not write log message to serial port");
+        }
+
+        if self.is_locked() {
+            return;
+        }
 
         if let Some(term) = self.lock().term.as_mut() {
             term.write_fmt_colored(
