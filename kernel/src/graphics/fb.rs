@@ -1,16 +1,15 @@
-use crate::{data::late_init::LateInit, sync::irq_lock::IRQLocked};
 use alloc::{vec, vec::Vec};
-
 use core::ptr::NonNull;
 
 use embedded_graphics_core::{
-    pixelcolor::Bgr888,
+    pixelcolor::Rgb888,
     prelude::{DrawTarget, IntoStorage, Point, PointsIter, RgbColor, Size},
     primitives::Rectangle,
     Pixel,
 };
-
 use uefi::proto::console::gop::ModeInfo;
+
+use crate::{data::late_init::LateInit, sync::irq_lock::IRQLocked};
 
 pub static GLOBAL_FB: IRQLocked<LateInit<FbDisplay>> = IRQLocked::new(LateInit::new());
 
@@ -40,18 +39,18 @@ impl FbDisplay {
         }
     }
 
-    pub fn scroll_up(&mut self, height: usize, bg: Bgr888) {
+    pub fn scroll_up(&mut self, height: usize, bg: Rgb888) {
         let high = self.mode.stride() * height;
         let low = self.mode.stride() * self.mode.resolution().1;
         self.buffer[0..(high - 1)].fill(bg.into_storage());
         self.buffer.copy_within(high..low, 0)
     }
 
-    pub fn fill(&mut self, color: Bgr888) {
+    pub fn fill(&mut self, color: Rgb888) {
         self.buffer.fill(color.into_storage());
     }
 
-    pub fn write(&mut self, pos: usize, color: Bgr888) {
+    pub fn write(&mut self, pos: usize, color: Rgb888) {
         self.buffer[pos] = color.into_storage();
     }
 }

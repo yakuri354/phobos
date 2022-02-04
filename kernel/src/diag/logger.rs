@@ -1,15 +1,14 @@
+use core::fmt::Write;
+
+use embedded_graphics_core::pixelcolor::{Rgb888, RgbColor, WebColors};
+use log::{Level, Log, Metadata, Record};
+
 use crate::{
     arch::debug::SERIAL1,
     data::late_init::LateInit,
     graphics::{fb::FbDisplay, fbterm::FbTextRender},
     sync::irq_lock::IRQLocked,
 };
-
-use core::fmt::Write;
-
-use embedded_graphics_core::pixelcolor::{Bgr888, RgbColor, WebColors};
-
-use log::{Level, Log, Metadata, Record};
 
 pub static GLOBAL_LOGGER: IRQLocked<DefaultLogger> = IRQLocked::new(DefaultLogger::new());
 
@@ -47,11 +46,11 @@ impl Log for IRQLocked<DefaultLogger> {
                     record.args()
                 ),
                 match record.level() {
-                    Level::Error => Bgr888::CSS_TOMATO,
-                    Level::Warn => Bgr888::CSS_LIGHT_SALMON,
-                    Level::Info => Bgr888::WHITE,
-                    Level::Debug => Bgr888::CSS_ANTIQUE_WHITE,
-                    Level::Trace => Bgr888::CSS_AZURE,
+                    Level::Error => Rgb888::CSS_TOMATO,
+                    Level::Warn => Rgb888::CSS_LIGHT_SALMON,
+                    Level::Info => Rgb888::WHITE,
+                    Level::Debug => Rgb888::CSS_ANTIQUE_WHITE,
+                    Level::Trace => Rgb888::CSS_AZURE,
                 },
             )
             .expect("Could not write log record to framebuffer")

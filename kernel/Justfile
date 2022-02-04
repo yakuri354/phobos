@@ -1,4 +1,4 @@
-dev cargo-params="" qemu-params="-s -d cpu_reset -serial stdio -device virtio-vga -no-reboot -no-shutdown" qemu="qemu-system-x86_64":
+dev cargo-params="" qemu-params="-s -d cpu_reset -serial stdio -no-reboot -no-shutdown" qemu="qemu-system-x86_64":
     #!/bin/sh -e
     if [ "$PWD" == "*phobos" ]; then
         cd kernel
