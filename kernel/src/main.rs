@@ -11,6 +11,7 @@
 extern crate alloc;
 extern crate core;
 
+use alloc::string::{String, ToString};
 use core::arch::asm;
 use log::info;
 
@@ -25,14 +26,13 @@ mod fs;
 mod graphics;
 mod io;
 mod mm;
+mod proc;
 mod sync;
 
 pub fn kernel_main() -> ! {
     info!("Starting main kernel loop");
-    x86_64::instructions::interrupts::enable();
+    
     loop {
-        unsafe {
-            asm!("hlt");
-        }
+        x86_64::instructions::interrupts::enable_and_hlt()
     }
 }

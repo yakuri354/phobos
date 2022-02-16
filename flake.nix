@@ -14,7 +14,7 @@
             pkgs.mkShell {
               buildInputs = with pkgs; [
                 nixpkgs-fmt
-                # rust-dev
+                nasm
                 rustup
                 uefi-run.defaultPackage.${system}
                 just

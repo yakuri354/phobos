@@ -292,6 +292,7 @@ fn init_fb(system_table: &mut SystemTable<Boot>) -> (FrameBuffer<'static>, ModeI
 
 #[entry]
 fn efi_main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
+    x86_64::instructions::interrupts::disable();
     uefi_services::init(&mut system_table).expect_success("Failed to setup UEFI services");
     system_table
         .stdout()

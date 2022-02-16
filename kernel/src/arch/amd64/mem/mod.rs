@@ -11,8 +11,6 @@ pub const PAGE_SIZE: u64 = 1 << PAGE_SHIFT;
 pub const PAGE_OFFSET_MASK: u64 = PAGE_SIZE - 1;
 pub const PHYS_MASK: u64 = (!0) >> (USIZE_BITS - PHYS_MAP_OFFSET.trailing_zeros() as u64);
 
-pub static mut KERNEL_STACK: [u8; 0x20000] = [0; 0x20000];
-
 #[inline]
 pub const fn page_to_pfn(addr: u64) -> u64 {
     (addr & PHYS_MASK) >> PAGE_SHIFT
