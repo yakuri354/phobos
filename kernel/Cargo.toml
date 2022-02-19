@@ -20,6 +20,10 @@ embedded-graphics-core = "0.3.3"
 embedded-graphics = { version = "0.7.1", features = ["nalgebra_support"] }
 static_assertions = "1.1.0"
 noto-sans-mono-bitmap = "0.1.5"
+crossbeam-queue = { version = "0.3.4", features = ["alloc"], default-features = false }
+conquer-once = { version = "0.3.2", default-features = false }
+futures-util = { version = "0.3.21", features = ["alloc"], default-features = false }
+pc-keyboard = "0.5.1"
 
 [target.x86_64-unknown-kernel.dependencies]
 ps2 = "0.2.0"

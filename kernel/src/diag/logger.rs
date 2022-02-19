@@ -1,4 +1,5 @@
-use core::fmt::Write;
+use alloc::format;
+use core::{fmt, fmt::Write};
 
 use embedded_graphics_core::pixelcolor::{Rgb888, RgbColor, WebColors};
 use log::{Level, Log, Metadata, Record};
@@ -70,4 +71,26 @@ impl DefaultLogger {
     pub fn reinit_with_fbterm(&mut self, term: FbTextRender) {
         self.term = Some(term)
     }
+
+    pub fn print(&mut self, args: fmt::Arguments) {
+        if let Some(mut serial) = SERIAL1.try_lock() {
+            serial
+                .write_fmt(args)
+                .expect("Could not write log message to serial port");
+        }
+
+        if let Some(term) = self.term.as_mut() {
+            term.write_fmt_colored(args, Rgb888::WHITE);
+        }
+    }
+}
+
+/// Prints to the host through the serial interface.
+#[macro_export]
+macro_rules! print {
+    ($($arg:tt)*) => {
+        {
+            $crate::diag::logger::GLOBAL_LOGGER.lock().print(format_args!($($arg)*));
+        }
+    };
 }

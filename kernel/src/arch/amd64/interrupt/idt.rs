@@ -3,8 +3,6 @@ use core::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-static TIMER_VAL: AtomicU64 = AtomicU64::new(0);
-
 use lazy_static::lazy_static;
 use log::{error, info};
 use pic8259::ChainedPics;
@@ -14,7 +12,7 @@ use x86_64::{
     set_general_handler,
     structures::{
         gdt::{Descriptor, GlobalDescriptorTable},
-        idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
+        idt::{HandlerFunc, InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
         paging::{PageSize, Size2MiB},
         tss::TaskStateSegment,
     },
@@ -25,6 +23,8 @@ use crate::{
     arch::interrupt::{IntIdx, IntIdx::Timer, PIC_OFFSET},
     sync::irq_lock::IRQLocked,
 };
+
+static TIMER_VAL: AtomicU64 = AtomicU64::new(0);
 
 pub static DOUBLE_FAULT_STACK: [u8; Size2MiB::SIZE as usize] = [0; Size2MiB::SIZE as usize];
 
@@ -106,6 +106,10 @@ pub fn init_cpu_structures() {
     }
 }
 
+pub fn register_int_handler(handler: HandlerFunc, int: u8) {
+    todo!()
+}
+
 extern "x86-interrupt" fn page_fault(frame: InterruptStackFrame, code: PageFaultErrorCode) {
     error!("Page fault occured");
     error!("{:#?}", frame);
@@ -133,11 +137,12 @@ extern "x86-interrupt" fn general_protection_fault(frame: InterruptStackFrame, f
     panic!("GPF");
 }
 
+/// Timer fires each 5 seconds
 extern "x86-interrupt" fn timer(_frame: InterruptStackFrame) {
-    let old = TIMER_VAL.fetch_add(1, Ordering::SeqCst);
-    if (old + 1) % 200 == 0 {
-        info!("TIMER SECOND {}", (old + 1) / 200);
-    }
+    let _ = TIMER_VAL.fetch_add(1, Ordering::SeqCst);
+    // if (old + 1) % 200 == 0 {
+    //     info!("TIMER SECOND {}", (old + 1) / 200);
+    // }
     unsafe {
         PICs.lock().notify_end_of_interrupt(IntIdx::Timer.as_u8());
     }
@@ -145,7 +150,7 @@ extern "x86-interrupt" fn timer(_frame: InterruptStackFrame) {
 
 extern "x86-interrupt" fn keyboard(_frame: InterruptStackFrame) {
     let code: u8 = unsafe { Port::new(0x60).read() };
-    info!("Keyboard code {:#x}", code);
+    crate::device::ps2kb::add_scancode(code);
     unsafe {
         PICs.lock()
             .notify_end_of_interrupt(IntIdx::Keyboard.as_u8());

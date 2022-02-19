@@ -13,7 +13,13 @@ extern crate core;
 
 use alloc::string::{String, ToString};
 use core::arch::asm;
+
 use log::info;
+
+use crate::{
+    device::ps2kb::print_keypresses,
+    task::{executor::Executor, Task},
+};
 
 /// Kernel diagnostic facilities, such as panics, logging, etc.
 #[macro_use]
@@ -28,11 +34,12 @@ mod io;
 mod mm;
 mod proc;
 mod sync;
+mod task;
 
 pub fn kernel_main() -> ! {
     info!("Starting main kernel loop");
-    
-    loop {
-        x86_64::instructions::interrupts::enable_and_hlt()
-    }
+
+    let mut executor = Executor::new();
+    executor.spawn(Task::new(print_keypresses()));
+    executor.run()
 }
