@@ -15,6 +15,7 @@
               buildInputs = with pkgs; [
                 nixpkgs-fmt
                 nasm
+                mdbook
                 rustup
                 uefi-run.defaultPackage.${system}
                 just

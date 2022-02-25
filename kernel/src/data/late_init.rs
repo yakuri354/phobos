@@ -3,6 +3,7 @@ use core::{
     ops::{Deref, DerefMut},
 };
 
+/// A value which must be initialized once
 pub struct LateInit<T> {
     init: bool,
     data: MaybeUninit<T>,

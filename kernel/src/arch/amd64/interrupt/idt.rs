@@ -50,10 +50,6 @@ lazy_static! {
         gdt
     };
     static ref IDT: InterruptDescriptorTable = {
-        // let mut prev_idt = sidt();
-        // prev_idt.base += PHYS_MAP_OFFSET;
-        // let mut idt = unsafe { prev_idt.base.as_ptr::<InterruptDescriptorTable>().read() };
-
         let mut idt = InterruptDescriptorTable::new();
 
         set_general_handler!(&mut idt, general_handler);
@@ -70,12 +66,15 @@ lazy_static! {
 }
 
 extern "C" {
+    /// Reload code and data segments after loading new GDT
+    /// Imported from asm.S
     fn reloadSegments();
 }
 
 pub static PICs: IRQLocked<ChainedPics> =
     IRQLocked::new(unsafe { ChainedPics::new(PIC_OFFSET, PIC_OFFSET + 8) });
 
+/// Loads the GDT and fixes the segments
 fn load_gdt() {
     // FIXME
     GDT.load();
@@ -86,6 +85,7 @@ fn load_gdt() {
 
 const PIC_TERM_COUNT: u16 = 5966; // Should fire roughly each 5 ms
 
+/// Initialize GDT, IDT and PIC
 pub fn init_cpu_structures() {
     load_gdt();
     IDT.load();
@@ -104,10 +104,6 @@ pub fn init_cpu_structures() {
         port2.write((PIC_TERM_COUNT & 0xff) as u8);
         port2.write((PIC_TERM_COUNT >> 8) as u8);
     }
-}
-
-pub fn register_int_handler(handler: HandlerFunc, int: u8) {
-    todo!()
 }
 
 extern "x86-interrupt" fn page_fault(frame: InterruptStackFrame, code: PageFaultErrorCode) {
@@ -139,10 +135,10 @@ extern "x86-interrupt" fn general_protection_fault(frame: InterruptStackFrame, f
 
 /// Timer fires each 5 seconds
 extern "x86-interrupt" fn timer(_frame: InterruptStackFrame) {
-    let _ = TIMER_VAL.fetch_add(1, Ordering::SeqCst);
-    // if (old + 1) % 200 == 0 {
-    //     info!("TIMER SECOND {}", (old + 1) / 200);
-    // }
+    let old = TIMER_VAL.fetch_add(1, Ordering::SeqCst);
+    if (old + 1) % 200 == 0 {
+        info!("TIMER SECOND {}", (old + 1) / 200);
+    }
     unsafe {
         PICs.lock().notify_end_of_interrupt(IntIdx::Timer.as_u8());
     }

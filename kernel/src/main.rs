@@ -24,16 +24,25 @@ use crate::{
 /// Kernel diagnostic facilities, such as panics, logging, etc.
 #[macro_use]
 mod diag;
+/// Architecture-specific code
 mod arch;
+/// Auxillary code, can be useful
 mod aux;
+/// Data structures
 mod data;
+/// Drivers
 mod device;
+/// Filesystem code
 mod fs;
+/// Graphics system
 mod graphics;
+/// Input/Output system
 mod io;
+/// Memory manager
 mod mm;
-mod proc;
+/// Synchronisation primitives
 mod sync;
+/// Async and cooperative multitasking
 mod task;
 
 pub fn kernel_main() -> ! {

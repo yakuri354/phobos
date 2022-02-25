@@ -92,6 +92,7 @@ where
     }
 }
 
+/// Map a large amount of memory
 unsafe fn map_offset<A: FrameAllocator<Size4KiB>>(
     virt: VirtAddr,
     phys: PhysAddr,
@@ -411,7 +412,7 @@ fn efi_main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
 
     info!("Loading kernel");
 
-    let entry = unsafe { map_kernel(handle.clone(), &mut system_table, &mut page_table) };
+    let entry = unsafe { map_kernel(handle, &mut system_table, &mut page_table) };
 
     info!(
         "Allocating kernel stack and mapping it at {:#x}",

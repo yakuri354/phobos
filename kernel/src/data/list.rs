@@ -4,8 +4,9 @@ use core::{
     ptr::{addr_of_mut, NonNull},
 };
 
-
-/// When a movable head is needed
+/// An unsafe linked list
+/// All pointers are assumed to be valid
+/// The head can be moved, nodes can not
 pub struct CDLListHead {
     node: Option<NonNull<CDLListNode>>,
 }

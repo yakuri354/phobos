@@ -12,7 +12,6 @@ pub use mem::PAGE_SIZE;
 use crate::{diag::reinit_with_fb, kernel_main};
 
 pub mod bit_ops;
-pub mod context;
 pub mod debug;
 pub mod interrupt;
 pub mod mem;
